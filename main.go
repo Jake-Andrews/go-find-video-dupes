@@ -5,9 +5,13 @@ import (
 	"log"
 	"os"
 	"strings"
+
+	ffmpeg "github.com/u2takey/ffmpeg-go"
 )
 
 var wrongArgsMsg string = "Error, your input must include a filedirectory path"
+var ignoreStr string = "git"
+var testFName string = "sh.webm"
 
 func main()  {
     args := os.Args
@@ -26,16 +30,31 @@ func main()  {
     log.Printf("Searching recursively starting from: %q\n", cwd)
     fileSystem := os.DirFS(cwd)
 
+    filePaths := getFilePaths(fileSystem, ignoreStr)
+    log.Println("Printing all file found: ")
+    for _, v := range filePaths {
+       log.Println(v)
+    }
+
+    ffmpegErr := ffmpeg.Input(testFName).
+        Output("./sh_out.mp4", ffmpeg.KwArgs{"vf": "scale=w=64:h=64"}).
+        OverWriteOutput().ErrorToStdOut().
+        Run()
+    if ffmpegErr != nil {
+        log.Printf("Error, ffmpeg, err: %v", ffmpegErr)
+    }
+}
+
+func getFilePaths(fileSystem fs.FS, ignoreStr string) []string  {
     var filePaths []string = make([]string, 0)
     walkDirErr := fs.WalkDir(fileSystem, ".", func(path string, d fs.DirEntry, err error) error {
         if err != nil {
-            log.Fatal(err)
+            log.Printf("Error, walking through filesystem, err: %v", err)
+            return err
         }
-        // TESTING, REMOVE LATER
-        if strings.Contains(path, "git") {
+        if strings.Contains(path, ignoreStr) {
             return nil
         }
-
         if d.IsDir() {
             log.Printf("Dir, Path: %q\n", path)
             return nil
@@ -48,9 +67,5 @@ func main()  {
         log.Println(walkDirErr)
     }
 
-    log.Println("Printing all file found: ")
-    for _, v := range filePaths {
-       log.Println(v)
-    }
+    return filePaths
 }
-
