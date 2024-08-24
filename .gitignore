@@ -25,5 +25,6 @@ go.work.sum
 .env
 
 *.txt
-.webm
-.mp4
+*.webm
+*.mp4
+*.png

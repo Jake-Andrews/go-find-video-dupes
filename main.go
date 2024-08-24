@@ -4,14 +4,46 @@ import (
 	"io/fs"
 	"log"
 	"os"
+	"path"
+	"strconv"
 	"strings"
 
 	ffmpeg "github.com/u2takey/ffmpeg-go"
 )
 
+/*
+General overview
+- Crawl fs, find video files
+- Generate images from videos
+- Apply hashing algorithm to images
+- Compare hashes to find duplicates
+
+Implementation details
+Things to consider
+  - Structuring code for Go routines/concurrency (obviously)
+  - **Heavy considerations for cpu usage/memory, possibly user defined limit
+    - FS crawling can be done in memory, rest shouldn't
+  - Save hash results/duplicate list
+  - Flag to not delete any files, only output duplicate filepaths to a list
+FS
+  - Skip/Include folders/files by name (regex)
+  - Skip/Include certain file types
+  - Soft/Hard link considerations
+Image generation
+  - Sample by seconds/frame count
+  - Frequency of samples
+Hashing algorithms
+  - phash, ahash, dhash, wavelet (later)
+Comparing hashes
+  - hamming distance
+*/
 var wrongArgsMsg string = "Error, your input must include a filedirectory path"
 var ignoreStr string = "git"
 var testFName string = "sh.webm"
+var scFolder string = "./screenshots/"
+
+//future cli args
+var fps int = 1
 
 func main()  {
     args := os.Args
@@ -19,6 +51,10 @@ func main()  {
         log.Fatalln(wrongArgsMsg)
     }
 
+	mkdirErr := os.MkdirAll(scFolder, 0644)
+	if mkdirErr != nil {
+		log.Fatalf("Error making screenshot folder, folder path: %q, error: %v", scFolder, mkdirErr)
+	}
     err := os.Chdir(args[1])
     if err != nil {
         log.Fatalf("Error changing working dir, error: %v", err)
@@ -36,10 +72,19 @@ func main()  {
        log.Println(v)
     }
 
-    ffmpegErr := ffmpeg.Input(testFName).
-        Output("./sh_out.mp4", ffmpeg.KwArgs{"vf": "scale=w=64:h=64"}).
-        OverWriteOutput().ErrorToStdOut().
-        Run()
+	//https://superuser.com/questions/135117/how-to-extract-one-frame-of-a-video-every-n-seconds-to-an-image
+	//myimage_%04d.png
+	//%0xd > zero-padded int x digits long
+
+	//1 frame per second = 3600 for an hour
+	//therefore, %05d is fine, 0-99999 = 27.7~ hours at 1 fps
+	fNameNoExt := strings.TrimSuffix(testFName, path.Ext(testFName))
+	strFps := strconv.Itoa(fps)
+	ffmpegErr := ffmpeg.Input(testFName).
+		Output(fNameNoExt + "%05d" + ".png", ffmpeg.KwArgs{"r": strFps}).
+		OverWriteOutput().ErrorToStdOut().
+		Run()
+
     if ffmpegErr != nil {
         log.Printf("Error, ffmpeg, err: %v", ffmpegErr)
     }
