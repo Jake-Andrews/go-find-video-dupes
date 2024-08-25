@@ -40,8 +40,9 @@ Hashing algorithms
 Comparing hashes
   - hamming distance
 */
+
 var wrongArgsMsg string = "Error, your input must include a filedirectory path"
-var ignoreStr string = "git"
+//var ignoreStr string = "git"
 var testFName string = "sh.webm"
 var scFolder string = "./screenshots"
 
@@ -69,7 +70,7 @@ func main()  {
     log.Printf("Searching recursively starting from: %q\n", cwd)
     fileSystem := os.DirFS(cwd)
 
-    filePaths := getFilePaths(fileSystem, ignoreStr, false)
+    filePaths := getFilePaths(fileSystem, "", "", []string{".webm"}, false)
     log.Println("Printing all file found: ")
     for _, v := range filePaths {
        log.Println(v)
@@ -101,7 +102,7 @@ func main()  {
 		log.Fatalf("Error changing directory to: %q, err: %v", scFolderPath, chdirErr)
 	}
 
-    scPaths := getFilePaths(scFS, "", true)
+    scPaths := getFilePaths(scFS, "", "", []string{".png"}, true)
 	log.Println("Printing all screenshots created: ")
     for _, v := range scPaths {
 		log.Println(v)
@@ -129,22 +130,39 @@ func main()  {
 
 }
 
-func getFilePaths(fileSystem fs.FS, ignoreStr string, absPath bool) []string  {
+func getFilePaths(fileSystem fs.FS, ignoreStr string, includeStr string, includeExt []string, absPath bool) []string  {
     var filePaths []string = make([]string, 0)
     walkDirErr := fs.WalkDir(fileSystem, ".", func(path string, d fs.DirEntry, err error) error {
         if err != nil {
             log.Printf("Error, walking through filesystem, err: %v", err)
             return err
         }
+        if d.IsDir() {
+            log.Printf("Dir, Path: %q\n", path)
+            return nil
+        }
+
         if !strings.EqualFold(ignoreStr, "") {
 			if strings.Contains(path, ignoreStr) {
             	return nil
         	}
 		}
-        if d.IsDir() {
-            log.Printf("Dir, Path: %q\n", path)
-            return nil
-        }
+		if !strings.EqualFold(includeStr, "") {
+			if !strings.Contains(path, includeStr) {
+				return nil
+			}
+		}
+
+		extMatched := true
+		for _, v := range includeExt {
+			v = strings.ToLower(v)
+			if pathExt := strings.ToLower(filepath.Ext(path)); strings.EqualFold(pathExt, v) {
+				extMatched = true
+				break
+			} else {extMatched = false}
+		}
+		if !extMatched {return nil}
+
         log.Printf("File, Path: %q\n", path)
 		if absPath {
 			fPath, err := filepath.Abs(path)
