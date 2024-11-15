@@ -10,6 +10,9 @@ import (
 	"strconv"
 	"strings"
 
+	"govdupes/args"
+    "govdupes/models"
+
 	"github.com/corona10/goimagehash"
 	ffmpeg "github.com/u2takey/ffmpeg-go"
 )
@@ -44,68 +47,75 @@ Comparing hashes
 
 var wrongArgsMsg string = "Error, your input must include only one arg which contains the path to the filedirectory to scan."
 
-// var ignoreStr string = "git"
-var (
-	testFName string = "sh.mp4"
-	scFolder  string = "./screenshots"
-)
+//var ignoreStr string = "git"
+//var (
+//  testFName string = "sh.mp4"
+//  scFolder  string = "./screenshots"
+//
 
-// future cli args
+// future cli arg
 var fps int = 1
 
 func main() {
-	args := os.Args
-	if len(args) != 2 {
-		log.Fatalln(wrongArgsMsg)
-	}
+	var config args.Config
+	config.ParseArgs()
 
-	if _, err := os.Stat(scFolder); os.IsNotExist(err) {
-		// scFolder does not exist
-		mkdirErr := os.MkdirAll(scFolder, 0o755)
-		if mkdirErr != nil {
-			log.Fatalf("Error making screenshot folder, folder path: %q, error: %v", scFolder, mkdirErr)
-		}
-	}
-	if _, err := os.Stat("./normalized_sh.mp4"); !os.IsNotExist(err) {
-		os.Remove("./normalized_sh.mp4")
-	}
-
-	err := os.Chdir(args[1])
-	if err != nil {
-		log.Fatalf("Error changing working dir, error: %v", err)
-	}
-
+	// temp for debugging
 	cwd, err := os.Getwd()
 	if err != nil {
 		log.Fatalf("Error getting cwd, error: %v", err)
 	}
-	log.Printf("Searching recursively starting from: %q\n", cwd)
-	fileSystem := os.DirFS(cwd)
-	filePaths := getFilePaths(fileSystem, "", "", []string{".mp4"}, false)
-	log.Println("Printing all files found: ")
-	for _, v := range filePaths {
-		log.Println(v)
+
+	aerr := os.RemoveAll("tmp")
+	if aerr != nil {
+		log.Fatalf("Error removing tmp dir, error: %v", aerr)
+	}
+	mkdirErr := os.MkdirAll("tmp", 0o755)
+	if mkdirErr != nil {
+		log.Fatalf("Error making tmp folder, error: %v", mkdirErr)
+	}
+	verr := os.RemoveAll("tmpv")
+	if verr != nil {
+		log.Fatalf("Error removing tmp dir, error: %v", verr)
+	}
+	merr := os.MkdirAll("tmpv", 0o755)
+	if merr != nil {
+		log.Fatalf("Error making tmp folder, error: %v", merr)
+	}
+
+	filePaths := make([]string, 0, 0)
+    videos := make([]models.Video, 0, 0)
+	for _, dir := range config.Directories {
+		log.Printf("Searching recursively starting from: %q\n", dir)
+		fileSystem := os.DirFS(dir)
+		filePaths := getFilePaths(fileSystem, config.IgnoreStr, config.IncludeStr, config.IgnoreExt, config.IncludeExt, false)
+		log.Println("Printing all files found: ")
+		for _, v := range filePaths {
+			log.Println(v)
+		}
 	}
 
 	// normalize videos
-	ffErr := ffmpeg.
-		Input(filePaths[0]).
-		Filter("scale", ffmpeg.Args{"64:64"}). // Resize to 64x64 pixels
-		Filter("fps", ffmpeg.Args{"15"}).      // Set frame rate to 15 fps
-		Output("normalized_"+filePaths[0],
-			ffmpeg.KwArgs{
-				"pix_fmt":  "rgb24",      // RGB24 color format
-				"vcodec":   "libx264",    // Video codec
-				"movflags": "+faststart", // MP4 format optimization
-				"an":       "",           // Disable audio
-							}).
-		GlobalArgs("-loglevel", "verbose"). // Set verbose logging
-		OverWriteOutput().
-		ErrorToStdOut().
-		Run()
+	for _, v := range filePaths {
+		ffErr := ffmpeg.
+			Input(v).
+			Filter("scale", ffmpeg.Args{"64:64"}). // Resize to 64x64 pixels
+			Filter("fps", ffmpeg.Args{"15"}).      // Set frame rate to 15 fps
+			Output(cwd+"/tmpv/"+v,
+				ffmpeg.KwArgs{
+					"pix_fmt":  "rgb24",      // RGB24 color format
+					"vcodec":   "libx264",    // Video codec
+					"movflags": "+faststart", // MP4 format optimization
+					"an":       "",           // Disable audio
+								}).
+			GlobalArgs("-loglevel", "verbose"). // Set verbose logging
+			OverWriteOutput().
+			ErrorToStdOut().
+			Run()
 
-	if ffErr != nil {
-		log.Printf("Error using ffmpeg to generate normalized video, video: %q, err: %v", filePaths[0], ffErr)
+		if ffErr != nil {
+			log.Printf("Error using ffmpeg to generate normalized video, video: %q, err: %v", v, ffErr)
+		}
 	}
 
 	//note look into proper usage of ffmpeg to extract frames, do not want
@@ -115,25 +125,18 @@ func main() {
 	//%0xd > zero-padded int x digits long
 	// 1 frame per second = 3600 for an hour
 	// therefore, %05d is fine, 0-99999 = 27.7~ hours at 1 fps
-	fNameNoExt := strings.TrimSuffix(testFName, path.Ext(testFName))
+
+	fNameNoExt := strings.TrimSuffix(testVideo, path.Ext(testVideo))
 	strFps := strconv.Itoa(fps)
 	ffmpegErr := ffmpeg.Input("normalized_"+filePaths[0]).
-		Output(scFolder+"/"+fNameNoExt+"%05d"+".png", ffmpeg.KwArgs{"r": strFps}).
+		Output("tmp"+"/"+fNameNoExt+"%05d"+".png", ffmpeg.KwArgs{"r": strFps}).
 		OverWriteOutput().ErrorToStdOut().
 		Run()
 	if ffmpegErr != nil {
 		log.Printf("Error, ffmpeg, err: %v", ffmpegErr)
 	}
 
-	log.Println(cwd + scFolder[1:])
-	scFolderPath := cwd + scFolder[1:]
-	scFS := os.DirFS(scFolderPath)
-	log.Printf("Changing cwd to: %q", scFolderPath)
-	chdirErr := os.Chdir(scFolderPath)
-	if chdirErr != nil {
-		log.Fatalf("Error changing directory to: %q, err: %v", scFolderPath, chdirErr)
-	}
-
+	scFS := os.DirFS("./tmp")
 	scPaths := getFilePaths(scFS, "", "", []string{".png"}, true)
 	log.Println("Printing all screenshots created: ")
 	for _, v := range scPaths {
@@ -157,17 +160,10 @@ func main() {
 
 		f.Close()
 	}
-
-	cerr := os.Chdir(cwd)
-	if cerr != nil {
-		log.Fatalf("Error changing working dir, error: %v", cerr)
-	}
-	cleanup()
-	log.Println("sneed")
 }
 
-func getFilePaths(fileSystem fs.FS, ignoreStr string, includeStr string, includeExt []string, absPath bool) []string {
-	var filePaths []string = make([]string, 0)
+func getFilePaths(fileSystem fs.FS, ignoreStr []string, includeStr []string, ignoreExt []string, includeExt []string, absPath bool) []models.Video {
+    videos := make([]models.Video, 0)
 	walkDirErr := fs.WalkDir(fileSystem, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			log.Printf("Error, walking through filesystem, err: %v", err)
@@ -177,63 +173,54 @@ func getFilePaths(fileSystem fs.FS, ignoreStr string, includeStr string, include
 			log.Printf("Dir, Path: %q\n", path)
 			return nil
 		}
+		fName := d.Name()
 
-		if !strings.EqualFold(ignoreStr, "") {
-			if strings.Contains(path, ignoreStr) {
-				return nil
+		if !strings.EqualFold(ignoreStr[0], "") {
+			for _, s := range ignoreStr {
+				if strings.Contains(fName, s) {
+					return nil
+				}
 			}
 		}
-		if !strings.EqualFold(includeStr, "") {
-			if !strings.Contains(path, includeStr) {
-				return nil
+		if !strings.EqualFold(includeStr[0], "") {
+			for _, s := range includeStr {
+				if !strings.Contains(fName, s) {
+					return nil
+				}
 			}
 		}
 
-		extMatched := true
 		for _, v := range includeExt {
 			v = strings.ToLower(v)
-			if pathExt := strings.ToLower(filepath.Ext(path)); strings.EqualFold(pathExt, v) {
-				extMatched = true
-				break
-			} else {
-				extMatched = false
+			if fNameExt := strings.ToLower(filepath.Ext(path)); !strings.EqualFold(fNameExt, v) {
+				return nil
 			}
 		}
-		if !extMatched {
-			return nil
+
+		for _, v := range ignoreExt {
+			v = strings.ToLower(v)
+			if fNameExt := strings.ToLower(filepath.Ext(path)); strings.EqualFold(fNameExt, v) {
+				return nil
+			}
 		}
 
 		log.Printf("File, Path: %q\n", path)
 		if absPath {
-			fPath, err := filepath.Abs(path)
+			path, err := filepath.Abs(path)
 			if err != nil {
 				log.Printf("Error creating absolute path, path: %q, err: %v", path, err)
+				return nil
 			}
-			filePaths = append(filePaths, fPath)
-			return nil
 		}
+        video := {
+        id }
 		filePaths = append(filePaths, path)
 		return nil
 	})
+
 	if walkDirErr != nil {
 		log.Println(walkDirErr)
 	}
-
+    //add videos to database
 	return filePaths
-}
-
-func cleanup() {
-	log.Println(scFolder)
-	cwd, _ := os.Getwd()
-	log.Println(cwd)
-	finfo, err := os.Stat(scFolder)
-	if os.IsNotExist(err) {
-		// scFolder does not exist
-		log.Println("qui?")
-	}
-	log.Println(finfo)
-	er := os.RemoveAll(scFolder)
-	if er != nil {
-		log.Printf("Error removing sc folder: %q", scFolder)
-	}
 }
