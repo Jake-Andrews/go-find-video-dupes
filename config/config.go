@@ -6,14 +6,28 @@ import (
 	"strings"
 )
 
-type StringSlice []string
+type StringSlice struct {
+	Values      []string
+	wipeDefault bool // Track whether the default value is currently in use
+}
 
 func (s *StringSlice) String() string {
-	return strings.Join(*s, ", ")
+	return strings.Join(s.Values, ", ")
 }
 
 func (s *StringSlice) Set(value string) error {
-	*s = append(*s, value)
+	if s.wipeDefault {
+		s.Values = nil
+		s.wipeDefault = false
+	}
+
+	values := strings.Split(value, ",")
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v != "" {
+			s.Values = append(s.Values, v)
+		}
+	}
 	return nil
 }
 
@@ -24,21 +38,33 @@ type Config struct {
 	IgnoreExt    StringSlice
 	IncludeExt   StringSlice
 	SaveSC       bool
+	AbsPath      bool
 }
 
 func (c *Config) ParseArgs() {
-	flag.Var(&c.StartingDirs, "d", "Specify directory path(s) where the search will begin from (use multiple times for multiple Directories)")
-	flag.Var(&c.IgnoreStr, "igs", "Specify string(s) to ignore (use multiple times for multiple strings)")
-	flag.Var(&c.IncludeStr, "is", "Specify string(s) to include (use multiple times for multiple strings)")
-	flag.Var(&c.IgnoreExt, "ige", "Specify extension(s) to ignore (use multiple times for multiple ext)")
-	flag.Var(&c.IncludeExt, "ie", "Specify extension(s) to include (use multiple times for multiple ext)")
-	c.SaveSC = *flag.Bool("sc", true, "Flag to save screenshots to folder T/F")
+	c.StartingDirs = StringSlice{Values: []string{"."}, wipeDefault: true}
+	c.IgnoreStr = StringSlice{}
+	c.IncludeStr = StringSlice{}
+	c.IgnoreExt = StringSlice{}
+	c.IncludeExt = StringSlice{Values: []string{"mp4", "m4a"}, wipeDefault: false}
+	c.SaveSC = false
+	c.AbsPath = true
+
+	flag.Var(&c.StartingDirs, "d", "Specify directory path(s) where the search will begin from (use multiple times for multiple Directories). Default value is \".\".")
+	flag.Var(&c.IgnoreStr, "igs", "Specify string(s) to ignore (use multiple times for multiple strings). Default value is \"\".")
+	flag.Var(&c.IncludeStr, "is", "Specify string(s) to include (use multiple times for multiple strings). Default value is \"\".")
+	flag.Var(&c.IgnoreExt, "ige", "Specify extension(s) to ignore (use multiple times for multiple ext). Default value is \"\".")
+	flag.Var(&c.IncludeExt, "ie", "Specify extension(s) to include (use multiple times for multiple ext). Default value is \"mp4,m4a\".")
+	c.SaveSC = *flag.Bool("sc", true, "Flag to save screenshots to folder T/F. Default value is \"False\".")
+	c.AbsPath = *flag.Bool("ap", true, "T/F. Default value is \"True\".")
+
 	flag.Parse()
 
-	log.Println("StartingDirs:", c.StartingDirs)
-	log.Println("Ignore File Strings:", c.IgnoreStr)
-	log.Println("Include File Strings:", c.IgnoreStr)
-	log.Println("Ignore File Extensions:", c.IgnoreExt)
-	log.Println("Include File Extensions:", c.IncludeExt)
+	log.Println("StartingDirs:", c.StartingDirs.Values)
+	log.Println("Ignore File Strings:", c.IgnoreStr.Values)
+	log.Println("Include File Strings:", c.IncludeStr.Values)
+	log.Println("Ignore File Extensions:", c.IgnoreExt.Values)
+	log.Println("Include File Extensions:", c.IncludeExt.Values)
 	log.Println("Screenshot flag:", c.SaveSC)
+	log.Println("AbsPath flag:", c.AbsPath)
 }
