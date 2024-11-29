@@ -6,6 +6,7 @@ require (
 	github.com/corona10/goimagehash v1.1.0
 	github.com/google/uuid v1.6.0
 	github.com/u2takey/ffmpeg-go v0.5.0
+	golang.org/x/image v0.0.0-20191009234506-e7c1f5e7dbb8
 )
 
 require (
