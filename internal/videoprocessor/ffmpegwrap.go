@@ -1,6 +1,7 @@
 package videoprocessor
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -10,29 +11,33 @@ import (
 	ffmpeg "github.com/u2takey/ffmpeg-go"
 )
 
-type ffmpegWrapper struct {
+type FFmpegWrapper struct {
 	logLevel string
 }
 
-func NewFFmpegInstance(logLevel string) *ffmpegWrapper {
+func NewFFmpegInstance(logLevel string) *FFmpegWrapper {
 	if logLevel == "" {
 		logLevel = "verbose"
 	}
-	return &ffmpegWrapper{logLevel: logLevel}
+	return &FFmpegWrapper{logLevel: logLevel}
 }
 
-func (f *ffmpegWrapper) ScreenshotAtTime(filePath string, scWriter io.Writer, timeStamp string) error {
-	log.Printf("Creating a screenshot at: %q, filePath: %q\n", timeStamp, filePath)
+func (f *FFmpegWrapper) ScreenshotAtTime(filePath string, scWriter io.Writer, timeStamp string) error {
+	width := 854
+	height := 480
+
+	log.Printf("Creating a screenshot %d:%d, at: %q, filePath: %q\n", width, height, timeStamp, filePath)
+
 	err := ffmpeg.
-		Input(filePath, ffmpeg.KwArgs{"ss": timeStamp}). // Place -ss here
+		Input(filePath, ffmpeg.KwArgs{"ss": timeStamp, "hide_banner": "", "loglevel": f.logLevel}).
 		Output("pipe:",
 			ffmpeg.KwArgs{
 				"vcodec":  "bmp",
 				"vframes": 1,
 				"format":  "image2",
+				"vf":      fmt.Sprintf("scale=%d:%d", width, height),
 			}).
 		WithOutput(scWriter).
-		OverWriteOutput().
 		ErrorToStdOut().
 		Run()
 	if err != nil {
@@ -42,7 +47,7 @@ func (f *ffmpegWrapper) ScreenshotAtTime(filePath string, scWriter io.Writer, ti
 	return nil
 }
 
-func (f *ffmpegWrapper) ScreenshotAtTimeSave(filePath string, scWriter io.Writer, timeStamp string, saveToFile bool, outputPath string) error {
+func (f *FFmpegWrapper) ScreenshotAtTimeSave(filePath string, scWriter io.Writer, timeStamp string, saveToFile bool, outputPath string) error {
 	log.Printf("Creating a screenshot at: %q, filePath: %q\n", timeStamp, filePath)
 
 	var fileWriter io.Writer
@@ -64,7 +69,6 @@ func (f *ffmpegWrapper) ScreenshotAtTimeSave(filePath string, scWriter io.Writer
 				"format":  "image2",
 			}).
 		WithOutput(scWriter).
-		OverWriteOutput().
 		ErrorToStdOut()
 
 	if saveToFile {
@@ -84,7 +88,7 @@ func (f *ffmpegWrapper) ScreenshotAtTimeSave(filePath string, scWriter io.Writer
 	return nil
 }
 
-func (f *ffmpegWrapper) NormalizeVideo(vWriter io.Writer, v *models.Video, kwargs ffmpeg.KwArgs) {
+func (f *FFmpegWrapper) NormalizeVideo(vWriter io.Writer, v *models.Video, kwargs ffmpeg.KwArgs) {
 	ffErr := ffmpeg.
 		Input(v.Path).
 		Filter("scale", ffmpeg.Args{"64:64"}). // Resize to 64x64 pixels
@@ -99,7 +103,6 @@ func (f *ffmpegWrapper) NormalizeVideo(vWriter io.Writer, v *models.Video, kwarg
 			}).
 		WithOutput(vWriter).
 		GlobalArgs("-loglevel", "verbose"). // Set verbose logging
-		OverWriteOutput().                  // unsure
 		ErrorToStdOut().
 		Run()
 	if ffErr != nil {

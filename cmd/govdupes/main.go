@@ -1,18 +1,14 @@
 package main
 
 import (
-	"fmt"
-	"io"
 	"log"
-	"sync"
-	"time"
 
 	"govdupes/internal/config"
 	"govdupes/internal/filesystem"
 	phash "govdupes/internal/hash"
+	"govdupes/internal/models"
+	"govdupes/internal/videoprocessor"
 	"govdupes/internal/videoprocessor/ffprobe"
-
-	ffmpeg "github.com/u2takey/ffmpeg-go"
 )
 
 var (
@@ -24,20 +20,33 @@ func main() {
 	var config config.Config
 	config.ParseArgs()
 	videos := filesystem.SearchDirs(&config)
+	vp := videoprocessor.NewFFmpegInstance(logLevel)
+	pHashes := []models.Videohash{}
 
 	for _, v := range *videos {
 		err := ffprobe.GetVideoInfo(&v)
 		if err != nil {
 			log.Fatalf("Error, getting video info for path: %q, err: %v\n", v.Path, err)
 		}
-		pHash, err := phash.Create(&v)
+		hashVal, err := phash.Create(vp, &v)
 		if err != nil {
 			log.Printf("Error trying to generate pHash, fileName: %q, err: %v", v.FileName, err)
 		}
-		log.Println(pHash)
+		log.Println(hashVal)
+
+		pHash := models.Videohash{
+			Value:    *hashVal,
+			HashType: "pHash",
+		}
+
+		pHashes = append(pHashes, pHash)
+	}
+	for _, h := range pHashes {
+		log.Println(h)
 	}
 }
 
+/*
 func extractFrames(videoReader io.Reader, timestamps []time.Duration) ([]io.Reader, error) {
 	var wg sync.WaitGroup
 	screenshots := make([]io.Reader, len(timestamps))
@@ -86,3 +95,4 @@ func extractFrames(videoReader io.Reader, timestamps []time.Duration) ([]io.Read
 
 	return screenshots, nil
 }
+*/

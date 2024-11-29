@@ -1,6 +1,6 @@
 package models
 
 type Videohash struct {
-	value    string
-	hashType string
+	Value    uint64
+	HashType string
 }
