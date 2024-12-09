@@ -1,14 +1,19 @@
 package main
 
 import (
+	"context"
 	"log"
 
 	"govdupes/internal/config"
+	"govdupes/internal/db/dbstore"
+	"govdupes/internal/db/sqlite"
 	"govdupes/internal/filesystem"
 	phash "govdupes/internal/hash"
 	"govdupes/internal/models"
 	"govdupes/internal/videoprocessor"
 	"govdupes/internal/videoprocessor/ffprobe"
+
+	_ "modernc.org/sqlite"
 )
 
 var (
@@ -19,30 +24,30 @@ var (
 func main() {
 	var config config.Config
 	config.ParseArgs()
+
+	db := sqlite.InitDB(config.DatabasePath.String())
+	defer db.Close()
+	repo := dbstore.NewVideoStore(db)
+
 	videos := filesystem.SearchDirs(&config)
 	vp := videoprocessor.NewFFmpegInstance(logLevel)
-	pHashes := []models.Videohash{}
 
-	for _, v := range *videos {
+	for _, v := range videos {
 		err := ffprobe.GetVideoInfo(&v)
 		if err != nil {
 			log.Fatalf("Error, getting video info for path: %q, err: %v\n", v.Path, err)
 		}
-		hashVal, err := phash.Create(vp, &v)
+
+		pHash, err := phash.Create(vp, &v)
 		if err != nil {
 			log.Printf("Error trying to generate pHash, fileName: %q, err: %v", v.FileName, err)
 		}
-		log.Println(hashVal)
+		pHashes := []models.Videohash{*pHash}
 
-		pHash := models.Videohash{
-			Value:    *hashVal,
-			HashType: "pHash",
+		if err := repo.CreateVideo(context.Background(), &v, &pHashes); err != nil {
+			log.Printf("Failed to create video: %v", err)
 		}
-
-		pHashes = append(pHashes, pHash)
-	}
-	for _, h := range pHashes {
-		log.Println(h)
+		log.Println(v)
 	}
 }
 

@@ -24,7 +24,7 @@ var (
 	scWidth   int = 854
 )
 
-func Create(vp *videoprocessor.FFmpegWrapper, v *models.Video) (*uint64, error) {
+func Create(vp *videoprocessor.FFmpegWrapper, v *models.Video) (*models.Videohash, error) {
 	timestamps := createTimeStamps(v.Duration, numImages)
 	images, err := createScreenshots(vp, timestamps, v)
 	if err != nil {
@@ -41,17 +41,23 @@ func Create(vp *videoprocessor.FFmpegWrapper, v *models.Video) (*uint64, error) 
 	if err != nil {
 		log.Printf("Error creating phash, err: %v", err)
 	}
-	h := hash.GetHash()
+	h := hash.ToString()
 	log.Printf("File: %q has pHash: %q", v.FileName, hash.ToString())
 
-	return &h, nil
+	pHash := models.Videohash{
+		Value:    h,
+		HashType: "pHash",
+	}
+	log.Println(pHash)
+
+	return &pHash, nil
 }
 
 func createTimeStamps(duration time.Duration, numTimestamps int) []string {
 	if numTimestamps <= 0 {
 		return nil
 	}
-
+	// skip intro/outro
 	intro := duration / 10
 	outro := duration * 9 / 10
 	interval := (outro - intro) / time.Duration(numTimestamps)

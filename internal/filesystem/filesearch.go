@@ -11,7 +11,7 @@ import (
 	"govdupes/internal/models"
 )
 
-func SearchDirs(c *config.Config) *[]models.Video {
+func SearchDirs(c *config.Config) []models.Video {
 	log.Println("Searching directories")
 	videos := make([]models.Video, 0)
 
@@ -28,7 +28,7 @@ func SearchDirs(c *config.Config) *[]models.Video {
 	if len(videos) == 0 {
 		log.Fatalf("Quitting, no files were found!\n")
 	}
-	return &videos
+	return videos
 }
 
 // check if file ext is in ignoreext, if so ignore
@@ -48,7 +48,7 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config) []models.Video {
 				return err
 			}
 			if d.IsDir() {
-				log.Printf("Dir, Path: %q\n", path)
+				// log.Printf("Dir, Path: %q\n", path)
 				return nil
 			}
 			fileName := d.Name()
@@ -64,14 +64,14 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config) []models.Video {
 			for _, v := range c.IgnoreExt.Values {
 				v = strings.ToLower(v)
 				if strings.EqualFold(fileExt, v) {
-					log.Printf("Ignoring file, name: %q, ignoreext: %q\n", fileName, c.IgnoreExt.Values)
+					// log.Printf("Ignoring file, name: %q, ignoreext: %q\n", fileName, c.IgnoreExt.Values)
 					return nil
 				}
 			}
 			for _, s := range c.IgnoreStr.Values {
 				s = strings.ToLower(s)
 				if strings.Contains(fileName, s) {
-					log.Printf("Ignoring file ignorestr, name: %q, ignorestr: %q\n", fileName, c.IgnoreStr.Values)
+					// log.Printf("Ignoring file ignorestr, name: %q, ignorestr: %q\n", fileName, c.IgnoreStr.Values)
 					return nil
 				}
 			}
@@ -86,7 +86,7 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config) []models.Video {
 				}
 			}
 			if !matchExt {
-				log.Printf("IncludeExt does not match, fileExt: %q, includeext: %q\n", fileExt, c.IncludeExt.Values)
+				// log.Printf("IncludeExt does not match, fileExt: %q, includeext: %q\n", fileExt, c.IncludeExt.Values)
 				return nil
 			}
 
@@ -147,6 +147,6 @@ func checkIncludeStr(fileName string, includeStrs []string) bool {
 		}
 	}
 
-	log.Printf("IncludeStr does not match, filename: %q, includestr: %q\n", fileName, includeStrs)
+	// log.Printf("IncludeStr does not match, filename: %q, includestr: %q\n", fileName, includeStrs)
 	return false
 }

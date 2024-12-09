@@ -32,6 +32,7 @@ func (s *StringSlice) Set(value string) error {
 }
 
 type Config struct {
+	DatabasePath StringSlice
 	StartingDirs StringSlice
 	IgnoreStr    StringSlice
 	IncludeStr   StringSlice
@@ -42,6 +43,7 @@ type Config struct {
 }
 
 func (c *Config) ParseArgs() {
+	c.DatabasePath = StringSlice{Values: []string{"./videos.db"}, wipeDefault: true}
 	c.StartingDirs = StringSlice{Values: []string{"."}, wipeDefault: true}
 	c.IgnoreStr = StringSlice{}
 	c.IncludeStr = StringSlice{}
@@ -50,7 +52,8 @@ func (c *Config) ParseArgs() {
 	c.SaveSC = false
 	c.AbsPath = true
 
-	flag.Var(&c.StartingDirs, "d", "Specify directory path(s) where the search will begin from (use multiple times for multiple Directories). Default value is \".\".")
+	flag.Var(&c.DatabasePath, "dp", "Specify database path where the database will live. Default value is \"./videos.db\".")
+	flag.Var(&c.StartingDirs, "sd", "Specify directory path(s) where the search will begin from (use multiple times for multiple Directories). Default value is \".\".")
 	flag.Var(&c.IgnoreStr, "igs", "Specify string(s) to ignore (use multiple times for multiple strings). Default value is \"\".")
 	flag.Var(&c.IncludeStr, "is", "Specify string(s) to include (use multiple times for multiple strings). Default value is \"\".")
 	flag.Var(&c.IgnoreExt, "ige", "Specify extension(s) to ignore (use multiple times for multiple ext). Default value is \"\".")
@@ -60,6 +63,7 @@ func (c *Config) ParseArgs() {
 
 	flag.Parse()
 
+	log.Println("DatabasePath:", c.DatabasePath.Values)
 	log.Println("StartingDirs:", c.StartingDirs.Values)
 	log.Println("Ignore File Strings:", c.IgnoreStr.Values)
 	log.Println("Include File Strings:", c.IncludeStr.Values)
