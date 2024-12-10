@@ -48,10 +48,10 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config) []models.Video {
 				return err
 			}
 			if d.IsDir() {
-				// log.Printf("Dir, Path: %q\n", path)
 				return nil
 			}
-			fileName := d.Name()
+
+			fileName := strings.ToLower(d.Name())
 			fileExt := strings.ToLower(filepath.Ext(path))
 			if len(fileExt) > 0 {
 				fileExt = fileExt[1:]
@@ -59,6 +59,7 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config) []models.Video {
 			fileInfo, err := d.Info()
 			if err != nil {
 				log.Printf("Error getting the fs.DirEntry.Info(), err: %v\n", err)
+				return nil
 			}
 
 			for _, v := range c.IgnoreExt.Values {
@@ -76,20 +77,9 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config) []models.Video {
 				}
 			}
 
-			matchExt := false
-			for _, v := range c.IncludeExt.Values {
-				v = strings.ToLower(v)
-				if strings.EqualFold(fileExt, v) {
-					log.Printf("IncludeExt, fileExt: %q, includeext: %q\n", fileExt, c.IncludeExt.Values)
-					matchExt = true
-					break
-				}
-			}
-			if !matchExt {
-				// log.Printf("IncludeExt does not match, fileExt: %q, includeext: %q\n", fileExt, c.IncludeExt.Values)
+			if !checkIncludeExt(fileExt, c.IncludeExt.Values) {
 				return nil
 			}
-
 			if !checkIncludeStr(fileName, c.IncludeStr.Values) {
 				return nil
 			}
@@ -102,12 +92,12 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config) []models.Video {
 				}
 			}
 
-			video := models.Video{
-				Path:       path,
-				FileName:   fileInfo.Name(),
-				ModifiedAt: fileInfo.ModTime(),
-				Size:       fileInfo.Size(),
+			if !checkValidVideo(path, fileInfo) {
+				log.Printf("Invalid video stats skipping video, path: %q, fileInfo.Name(): %q, fileInfo.Size(): %d", path, fileInfo.Name(), fileInfo.Size())
+				return nil
 			}
+
+			video := createVideo(path, fileInfo)
 			videos = append(videos, video)
 			return nil
 		},
@@ -133,9 +123,27 @@ func createVideo(path string, fileInfo os.FileInfo) models.Video {
 	return video
 }
 
+func checkIncludeExt(fileExt string, includeExts []string) bool {
+	if len(includeExts) == 0 {
+		return true
+	}
+
+	fileExtLower := strings.ToLower(fileExt)
+	for _, v := range includeExts {
+		v = strings.ToLower(v)
+		if strings.EqualFold(fileExtLower, v) {
+			// log.Printf("IncludeExt, fileExtLower: %q, includeext:
+			// %q\n", fileExt, includeExts)
+			return true
+		}
+	}
+	// log.Printf("IncludeExt does not match, fileExt: %q, includeext:
+	// %q\n", fileExt, includeExts)
+	return false
+}
+
 func checkIncludeStr(fileName string, includeStrs []string) bool {
 	if len(includeStrs) == 0 {
-		// No inclusion criteria, so always match
 		return true
 	}
 
@@ -149,4 +157,11 @@ func checkIncludeStr(fileName string, includeStrs []string) bool {
 
 	// log.Printf("IncludeStr does not match, filename: %q, includestr: %q\n", fileName, includeStrs)
 	return false
+}
+
+func checkValidVideo(path string, fileInfo os.FileInfo) bool {
+	if path == "" || fileInfo.Name() == "" || fileInfo.Size() <= 0 {
+		return false
+	}
+	return true
 }

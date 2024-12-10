@@ -22,7 +22,7 @@ func InitDB(dbPath string) *sql.DB {
 
 	_, err = db.Exec("PRAGMA foreign_keys = ON;")
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Error setting PRAGMA foreign_keys = ON: %v\n", err)
 	}
 
 	_, err = db.Exec(`

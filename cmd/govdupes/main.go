@@ -27,25 +27,32 @@ func main() {
 
 	db := sqlite.InitDB(config.DatabasePath.String())
 	defer db.Close()
+
 	repo := dbstore.NewVideoStore(db)
+	vp := videoprocessor.NewFFmpegInstance(logLevel)
 
 	videos := filesystem.SearchDirs(&config)
-	vp := videoprocessor.NewFFmpegInstance(logLevel)
+	filteredVideos := make([]models.Video, 0, len(videos))
 
 	for _, v := range videos {
 		err := ffprobe.GetVideoInfo(&v)
 		if err != nil {
-			log.Fatalf("Error, getting video info for path: %q, err: %v\n", v.Path, err)
+			log.Printf("Error getting video info, skipping file with path: %q, err: %v\n", v.Path, err)
+			continue
 		}
+		filteredVideos = append(filteredVideos, v)
+	}
 
+	for _, v := range filteredVideos {
 		pHash, err := phash.Create(vp, &v)
 		if err != nil {
-			log.Printf("Error trying to generate pHash, fileName: %q, err: %v", v.FileName, err)
+			log.Printf("Error, trying to generate pHash, fileName: %q, err: %v", v.FileName, err)
 		}
 		pHashes := []models.Videohash{*pHash}
 
 		if err := repo.CreateVideo(context.Background(), &v, &pHashes); err != nil {
 			log.Printf("Failed to create video: %v", err)
+			continue
 		}
 		log.Println(v)
 	}
