@@ -43,20 +43,23 @@ func InitDB(dbPath string) *sql.DB {
 		);
 	`)
 	if err != nil {
-		log.Fatalf("Error initializing the videos table: %v\n", err)
+		log.Fatalf("Error initializing the video table: %v\n", err)
 	}
 
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS videohash (
 			videohashID INTEGER PRIMARY KEY AUTOINCREMENT,
-			videoID TEXT,
-			value TEXT NOT NULL,
+			videoID INTEGER NOT NULL,
+			hashValue TEXT NOT NULL,
 			hashType TEXT NOT NULL,
+			duration INTEGER NOT NULL,
+			neighbours TEXT,			
+            bucket INTEGER,
 			FOREIGN KEY (videoID) REFERENCES video (videoID) ON DELETE CASCADE
 		);
 	`)
 	if err != nil {
-		log.Fatalf("Error initializing the videohashes table: %v\n", err)
+		log.Fatalf("Error initializing the videohash table: %v\n", err)
 	}
 
 	log.Println("Successfully initialized the database!")

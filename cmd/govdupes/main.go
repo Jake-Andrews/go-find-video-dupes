@@ -7,6 +7,7 @@ import (
 	"govdupes/internal/config"
 	"govdupes/internal/db/dbstore"
 	"govdupes/internal/db/sqlite"
+	"govdupes/internal/duplicate"
 	"govdupes/internal/filesystem"
 	phash "govdupes/internal/hash"
 	"govdupes/internal/models"
@@ -31,44 +32,76 @@ func main() {
 	repo := dbstore.NewVideoStore(db)
 	vp := videoprocessor.NewFFmpegInstance(logLevel)
 
-	// create a list of map[string]models.Video from dbVideos
-	// if map[path] exists and size/etc...match, don't add
 	videos := filesystem.SearchDirs(&config)
-	dbVideos, _ := repo.GetVideos(context.Background())
-	vNotInDB := videoExistsInDB(videos, dbVideos)
+	dbVideos, _, err := repo.GetVideos(context.Background())
+	if err != nil {
+		log.Fatalf("Error getting videos from data, err: %v\n", err)
+	}
+	// create a list of map[path (string)]models.Video from dbVideos
+	// if map[path] exists and size/etc...match, don't add
+	videosNotInDB := videoExistsInDB(videos, dbVideos)
 
-	validVideos := make([]models.Video, 0, len(vNotInDB))
-	log.Println(vNotInDB)
-	for _, v := range vNotInDB {
+	validVideos := make([]models.Video, 0, len(videosNotInDB))
+	for _, v := range videosNotInDB {
 		err := ffprobe.GetVideoInfo(&v)
 		if err != nil {
+			v.Corrupted = true
 			log.Printf("Error getting video info, skipping file with path: %q, err: %v\n", v.Path, err)
 			continue
 		}
 		validVideos = append(validVideos, v)
 	}
 
+	var pHashes []*models.Videohash
 	for _, v := range validVideos {
 		pHash, err := phash.Create(vp, &v)
 		if err != nil {
 			log.Printf("Error, trying to generate pHash, fileName: %q, err: %v", v.FileName, err)
+			continue
 		}
-		pHashes := []models.Videohash{*pHash}
+		pHashes = append(pHashes, pHash)
 
-		if err := repo.CreateVideo(context.Background(), &v, pHashes); err != nil {
-			log.Printf("Failed to create video: %v", err)
+		tmp := []*models.Videohash{pHash}
+		if err := repo.CreateVideo(context.Background(), &v, tmp); err != nil {
+			log.Printf("FAILED to create video: %v", err)
 			continue
 		}
 		log.Println(v)
 	}
+	//dbHashes = append(dbHashes, pHashes...)
+	//log.Println(dbHashes)
+	//for _, h := range dbHashes {
+	//	log.Println(h)
+	//}
+	fVideos, fHashes, err := repo.GetVideos(context.Background())
+	if err != nil {
+		log.Println(err)
+	}
+	for _, h := range fHashes {
+		log.Println("sneed")
+		log.Println(*h)
+	}
+	for _, v := range fVideos {
+		log.Println("feed")
+		log.Println(*v)
+	}
+
+	log.Println("Starting to match hashes")
+
+	hashDuplicates, err := duplicate.FindVideoDuplicates(fHashes)
+	if err != nil {
+		log.Fatalf("Error trying to determine duplicates, err: %v", err)
+	}
+
+	log.Println(hashDuplicates)
 }
 
-func videoExistsInDB(v []models.Video, dbVideos []models.Video) []models.Video {
+func videoExistsInDB(v []models.Video, dbVideos []*models.Video) []models.Video {
 	// map[filepath (string)]models.Video quickly check if video exists in DB
 	dbPathToVideo := make(map[string]models.Video, len(dbVideos))
 	trimmedVideos := make([]models.Video, 0, len(v))
 	for _, video := range dbVideos {
-		dbPathToVideo[video.Path] = video
+		dbPathToVideo[video.Path] = *video
 	}
 
 	for _, video := range v {

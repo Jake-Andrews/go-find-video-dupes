@@ -1,4 +1,4 @@
-package phash
+package hash
 
 import (
 	"bytes"
@@ -6,7 +6,6 @@ import (
 	"image"
 	"image/draw"
 	"log"
-	"time"
 
 	"govdupes/internal/models"
 	"govdupes/internal/videoprocessor"
@@ -44,35 +43,34 @@ func Create(vp *videoprocessor.FFmpegWrapper, v *models.Video) (*models.Videohas
 	h := hash.ToString()
 	log.Printf("File: %q has pHash: %q", v.FileName, hash.ToString())
 
-	pHash := models.Videohash{
-		Value:    h,
-		HashType: "pHash",
-	}
-	log.Println(pHash)
+	pHash := createPhash(v, h)
+	log.Println(*pHash)
 
-	return &pHash, nil
+	return pHash, nil
 }
 
-func createTimeStamps(duration time.Duration, numTimestamps int) []string {
+func createTimeStamps(duration float32, numTimestamps int) []string {
 	if numTimestamps <= 0 {
 		return nil
 	}
-	// skip intro/outro
+	// Skip intro and outro
 	intro := duration / 10
 	outro := duration * 9 / 10
-	interval := (outro - intro) / time.Duration(numTimestamps)
+	interval := (outro - intro) / float32(numTimestamps)
 
 	var timestamps []string
 	for i := 0; i < numTimestamps; i++ {
-		t := durationToFFmpegTimestamp(intro + time.Duration(i)*interval)
+		t := durationToFFmpegTimestamp(intro + float32(i)*interval)
 		timestamps = append(timestamps, t)
 	}
 
 	return timestamps
 }
 
-func durationToFFmpegTimestamp(d time.Duration) string {
-	totalMilliseconds := d.Milliseconds()
+func durationToFFmpegTimestamp(d float32) string {
+	// Convert duration in seconds to milliseconds
+	totalMilliseconds := int(d * 1000)
+
 	hours := totalMilliseconds / (1000 * 60 * 60)
 	minutes := (totalMilliseconds / (1000 * 60)) % 60
 	seconds := (totalMilliseconds / 1000) % 60
@@ -129,4 +127,15 @@ func createCollage(images []image.Image) (image.Image, error) {
 	}
 
 	return collage, nil
+}
+
+func createPhash(v *models.Video, h string) *models.Videohash {
+	pHash := models.Videohash{
+		VideoID:   v.VideoID,
+		HashType:  "pHash",
+		HashValue: h,
+		Duration:  v.Duration,
+		Bucket:    -1,
+	}
+	return &pHash
 }

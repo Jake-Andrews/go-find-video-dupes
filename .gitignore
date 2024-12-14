@@ -28,3 +28,4 @@ go.work.sum
 *.webm
 *.mp4
 *.png
+*.md

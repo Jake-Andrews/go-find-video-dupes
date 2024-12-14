@@ -7,7 +7,6 @@ import (
 	"log"
 	"os/exec"
 	"strconv"
-	"time"
 
 	"govdupes/internal/models"
 )
@@ -95,16 +94,6 @@ func setVideo(f *FFProbeOutput, v *models.Video) error {
 		}
 	}
 
-	dur, err := time.ParseDuration(f.Format.Duration + "s")
-	if err != nil {
-		log.Printf("Error, parsing duration\n")
-		return err
-	}
-	if dur <= 0 {
-		return fmt.Errorf("Invalid time.Duration from ffprobe, filename: %q, duration: %v", v.FileName, dur)
-	}
-	v.Duration = dur
-
 	size, err := strconv.Atoi(f.Format.Size)
 	if err != nil {
 		return fmt.Errorf("Error converting size to int, filename: %q, size: %q", v.FileName, size)
@@ -119,6 +108,16 @@ func setVideo(f *FFProbeOutput, v *models.Video) error {
 	} else {
 		v.BitRate = bitrate
 	}
+
+	dur, err := strconv.ParseFloat(f.Format.Duration, 64)
+	if err != nil {
+		log.Printf("Error, parsing duration\n")
+		return err
+	}
+	if dur <= 0 {
+		return fmt.Errorf("Invalid time.Duration from ffprobe, filename: %q, duration: %v", v.FileName, dur)
+	}
+	v.Duration = float32(dur)
 
 	return nil
 }

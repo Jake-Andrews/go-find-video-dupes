@@ -1,8 +1,20 @@
 package models
 
+type HashType string
+
+const (
+	HashTypePHash HashType = "phash"
+)
+
 type Videohash struct {
-	VideohashID int64  `db:"videohashID" json:"videohashID"` // Primary key
-	VideoID     int64  `db:"videoID" json:"videoID"`         // Foreign key referencing Video
-	Value       string `db:"value" json:"value"`
-	HashType    string `db:"hashType" json:"hashType"`
+	VideohashID int64    `db:"videohashID"` // primary key
+	VideoID     int64    `db:"videoID"`     // foreign key
+	HashType    HashType `db:"hashType"`
+	HashValue   string   `db:"hashValue"`
+	Duration    float32  `db:"duration"`
+	Neighbours  []int    `db:"neighbours"`
+	Bucket      int      `db:"bucket"`
+	// Metadata    Metadata `db:"metadata"`
 }
+
+type Metadata map[string]interface{}
