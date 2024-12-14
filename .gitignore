@@ -29,3 +29,4 @@ go.work.sum
 *.mp4
 *.png
 *.md
+*.json

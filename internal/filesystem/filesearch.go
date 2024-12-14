@@ -16,13 +16,23 @@ func SearchDirs(c *config.Config) []models.Video {
 	videos := make([]models.Video, 0)
 
 	for _, dir := range c.StartingDirs.Values {
+		dir = filepath.Clean(strings.TrimSuffix(dir, "/"))
 		log.Printf("Searching recursively starting from: %q\n", dir)
-		fileSystem := os.DirFS(dir)
-		videos = append(videos, getVideosFromFS(fileSystem, c)...)
-		log.Println("Printing all files found: ")
-		for _, v := range videos {
-			log.Println(v)
+		info, err := os.Stat(dir)
+		if err != nil {
+			log.Printf("Error accessing directory %q: %v\n", dir, err)
+			continue
 		}
+		if !info.IsDir() {
+			log.Printf("Skipping %q because it's not a directory\n", dir)
+			continue
+		}
+		fileSystem := os.DirFS(dir)
+		videos = append(videos, getVideosFromFS(fileSystem, c, dir)...)
+		//log.Println("Printing all files found: ")
+		//for _, v := range videos {
+		//	log.Println(v)
+		//}
 	}
 
 	if len(videos) == 0 {
@@ -36,7 +46,7 @@ func SearchDirs(c *config.Config) []models.Video {
 // check if file name is in ignorestr, if so ignore
 // check if filename is in includestr, if so include consider the file
 // if both includeext/includestr agree then include the file
-func getVideosFromFS(fileSystem fs.FS, c *config.Config) []models.Video {
+func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string) []models.Video {
 	videos := make([]models.Video, 0)
 
 	walkDirErr := fs.WalkDir(
@@ -85,11 +95,12 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config) []models.Video {
 			}
 
 			if c.AbsPath {
-				path, err := filepath.Abs(path)
-				if err != nil {
-					log.Printf("Error creating absolute path, path: %q, err: %v\n", path, err)
-					return err
-				}
+				// path, err = filepath.Abs(path)
+				path = filepath.Join(root, path)
+				//if err != nil {
+				//	log.Printf("Error creating absolute path, path: %q, err: %v\n", path, err)
+				//	return err
+				//}
 			}
 
 			if !checkValidVideo(path, fileInfo) {
