@@ -48,7 +48,7 @@ func (c *Config) ParseArgs() {
 	c.IgnoreStr = StringSlice{}
 	c.IncludeStr = StringSlice{}
 	c.IgnoreExt = StringSlice{}
-	c.IncludeExt = StringSlice{Values: []string{"mp4", "m4a"}, wipeDefault: false}
+	c.IncludeExt = StringSlice{Values: []string{"mp4", "m4a", "webm"}, wipeDefault: false}
 	c.SaveSC = false
 	c.AbsPath = true
 

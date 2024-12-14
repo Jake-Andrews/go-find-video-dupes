@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
+	"os"
 
 	"govdupes/internal/config"
 	"govdupes/internal/db/dbstore"
@@ -94,6 +96,15 @@ func main() {
 	}
 
 	log.Println(hashDuplicates)
+	log.Println("Printing duplicate video groups:")
+	for i := 0; i < len(hashDuplicates); i++ {
+		log.Printf("Video group #%d", i)
+		for _, k := range hashDuplicates[i] {
+			j := k - 1
+			log.Printf("Filename: %q, path: %q", fVideos[j].FileName, fVideos[j].Path)
+		}
+	}
+	writeDuplicatesToJSON(hashDuplicates, fVideos, "duplicates.json")
 }
 
 func videoExistsInDB(v []models.Video, dbVideos []*models.Video) []models.Video {
@@ -129,4 +140,42 @@ func identicalVideoChecker(v *models.Video, dbV *models.Video) bool {
 		return true
 	}
 	return false
+}
+
+func writeDuplicatesToJSON(hashDuplicates [][]int, fVideos []*models.Video, outputPath string) error {
+	// Create a structure to hold duplicate groups
+	duplicateGroups := make([][]models.Video, len(hashDuplicates))
+
+	// Populate the structure
+	for i, group := range hashDuplicates {
+		duplicateGroups[i] = make([]models.Video, len(group))
+		for j, index := range group {
+			if index < 1 || index > len(fVideos) {
+				log.Printf("Invalid index %d in group %d, skipping...", index, i)
+				continue
+			}
+			duplicateGroups[i][j] = *fVideos[index-1] // Convert 1-based to 0-based index
+		}
+	}
+
+	// Wrap groups in a top-level structure
+	data := map[string]interface{}{
+		"duplicateGroups": duplicateGroups,
+	}
+
+	// Create and write to the JSON file
+	file, err := os.Create(outputPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ") // Pretty-print JSON
+	if err := encoder.Encode(data); err != nil {
+		return err
+	}
+
+	log.Printf("Duplicate groups successfully written to %s", outputPath)
+	return nil
 }
