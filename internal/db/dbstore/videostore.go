@@ -32,14 +32,17 @@ func (r *videoRepo) CreateVideo(ctx context.Context, video *models.Video, hashes
 	sqlRes, err := tx.ExecContext(ctx, `
 		INSERT INTO video (
 			path, fileName, createdAt, modifiedAt, frameRate, videoCodec,
-			audioCodec, width, height, duration, size, bitRate
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			audioCodec, width, height, duration, size, bitRate,
+			numHardLinks, symbolicLink, isSymbolicLink, isHardLink, inode, device
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		video.Path, video.FileName,
 		video.CreatedAt.Format(time.RFC3339), video.ModifiedAt.Format(time.RFC3339),
 		video.FrameRate, video.VideoCodec, video.AudioCodec,
 		video.Width, video.Height, video.Duration,
 		video.Size, video.BitRate,
+		video.NumHardLinks, video.SymbolicLink, video.IsSymbolicLink,
+		video.IsHardLink, video.Inode, video.Device,
 	)
 	if err != nil {
 		tx.Rollback()
@@ -79,7 +82,9 @@ func (r *videoRepo) CreateVideo(ctx context.Context, video *models.Video, hashes
 
 func (r *videoRepo) GetVideo(ctx context.Context, videoPath string) (*models.Video, []models.Videohash, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT videoID, path, fileName, createdAt, modifiedAt, frameRate, videoCodec, audioCodec, width, height, duration, size, bitRate
+		SELECT videoID, path, fileName, createdAt, modifiedAt, frameRate, videoCodec, audioCodec,
+		       width, height, duration, size, bitRate, numHardLinks, symbolicLink, 
+		       isSymbolicLink, isHardLink, inode, device
 		FROM video WHERE path = ?`, videoPath)
 
 	var video models.Video
@@ -88,6 +93,8 @@ func (r *videoRepo) GetVideo(ctx context.Context, videoPath string) (*models.Vid
 		&video.VideoID, &video.Path, &video.FileName, &video.CreatedAt, &video.ModifiedAt,
 		&video.FrameRate, &video.VideoCodec, &video.AudioCodec, &video.Width, &video.Height,
 		&duration, &video.Size, &video.BitRate,
+		&video.NumHardLinks, &video.SymbolicLink, &video.IsSymbolicLink,
+		&video.IsHardLink, &video.Inode, &video.Device,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -127,7 +134,9 @@ func (r *videoRepo) GetVideo(ctx context.Context, videoPath string) (*models.Vid
 func (r *videoRepo) GetVideos(ctx context.Context) ([]*models.Video, []*models.Videohash, error) {
 	log.Println("Getting videos from the database!")
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT videoID, path, fileName, createdAt, modifiedAt, frameRate, videoCodec, audioCodec, width, height, duration, size, bitRate
+		SELECT videoID, path, fileName, createdAt, modifiedAt, frameRate, videoCodec, audioCodec,
+		       width, height, duration, size, bitRate, numHardLinks, symbolicLink, 
+		       isSymbolicLink, isHardLink, inode, device
 		FROM video`)
 	if err != nil {
 		return nil, nil, fmt.Errorf("get videos: %w", err)
@@ -143,6 +152,8 @@ func (r *videoRepo) GetVideos(ctx context.Context) ([]*models.Video, []*models.V
 			&video.VideoID, &video.Path, &video.FileName, &video.CreatedAt, &video.ModifiedAt,
 			&video.FrameRate, &video.VideoCodec, &video.AudioCodec, &video.Width, &video.Height,
 			&duration, &video.Size, &video.BitRate,
+			&video.NumHardLinks, &video.SymbolicLink, &video.IsSymbolicLink,
+			&video.IsHardLink, &video.Inode, &video.Device,
 		); err != nil {
 			return nil, nil, fmt.Errorf("scan video: %w", err)
 		}

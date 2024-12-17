@@ -39,7 +39,13 @@ func InitDB(dbPath string) *sql.DB {
 			height INTEGER,
 			duration INTEGER NOT NULL,
 			size INTEGER NOT NULL,
-			bitRate INTEGER
+			bitRate INTEGER,
+			numHardLinks INTEGER,
+			symbolicLink TEXT,
+			isSymbolicLink INTEGER,
+			isHardLink INTEGER,
+			inode INTEGER,
+			device INTEGER
 		);
 	`)
 	if err != nil {
@@ -53,8 +59,8 @@ func InitDB(dbPath string) *sql.DB {
 			hashValue TEXT NOT NULL,
 			hashType TEXT NOT NULL,
 			duration INTEGER NOT NULL,
-			neighbours TEXT,			
-            bucket INTEGER,
+			neighbours TEXT,
+			bucket INTEGER,
 			FOREIGN KEY (videoID) REFERENCES video (videoID) ON DELETE CASCADE
 		);
 	`)
@@ -65,3 +71,4 @@ func InitDB(dbPath string) *sql.DB {
 	log.Println("Successfully initialized the database!")
 	return db
 }
+

@@ -48,6 +48,7 @@ func SearchDirs(c *config.Config) []models.Video {
 // if both includeext/includestr agree then include the file
 func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string) []models.Video {
 	videos := make([]models.Video, 0)
+	fileTracker := NewFileTracker()
 
 	walkDirErr := fs.WalkDir(
 		fileSystem,
@@ -66,9 +67,16 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string) []models.V
 			if len(fileExt) > 0 {
 				fileExt = fileExt[1:]
 			}
+
 			fileInfo, err := d.Info()
 			if err != nil {
 				log.Printf("Error getting the fs.DirEntry.Info(), err: %v\n", err)
+				return nil
+			}
+
+			fileID, err := fileTracker.FindFileLinks(path, *c)
+			if err != nil {
+				log.Printf("Error trying to detect if file was a symbolic/hard link, path: %q", path)
 				return nil
 			}
 
@@ -108,7 +116,7 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string) []models.V
 				return nil
 			}
 
-			video := createVideo(path, fileInfo)
+			video := createVideo(path, fileInfo, *fileID)
 			videos = append(videos, video)
 			return nil
 		},
@@ -121,15 +129,18 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string) []models.V
 	return videos
 }
 
-func createVideo(path string, fileInfo os.FileInfo) models.Video {
-	// Fileinfo.Sys to get OS specific data on file including the
-	// modification time/creation
-
+func createVideo(path string, fileInfo os.FileInfo, fileID FileIdentity) models.Video {
 	video := models.Video{
-		Path:       path,
-		FileName:   fileInfo.Name(),
-		ModifiedAt: fileInfo.ModTime(),
-		Size:       fileInfo.Size(),
+		Path:           path,
+		FileName:       fileInfo.Name(),
+		ModifiedAt:     fileInfo.ModTime(),
+		Size:           fileInfo.Size(),
+		NumHardLinks:   fileID.NumHardLinks, // identify
+		SymbolicLink:   fileID.SymbolicLink,
+		IsSymbolicLink: fileID.IsSymbolicLink,
+		IsHardLink:     fileID.IsHardLink,
+		Inode:          fileID.Inode,
+		Device:         fileID.Device,
 	}
 	return video
 }
