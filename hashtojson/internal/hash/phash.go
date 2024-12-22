@@ -23,12 +23,7 @@ func Create(vp *videoprocessor.FFmpegWrapper, v *models.Video) (*models.Videohas
 		return nil, nil, err
 	}
 
-	// converting to base64 for storage later in db
-	base64Images, err := ConvertImagesToBase64(images)
-	if err != nil {
-		log.Printf("Error converting images to base64, err: %q", err)
-	}
-	screenshots := models.Screenshots{Screenshots: base64Images}
+	screenshots := models.Screenshots{Screenshots: images}
 
 	image, err := createCollage(images)
 	if err != nil {
@@ -130,7 +125,7 @@ func createCollage(images []image.Image) (image.Image, error) {
 
 func createPhash(v *models.Video, h string) *models.Videohash {
 	pHash := models.Videohash{
-		VideoID:   v.VideoID,
+		ID:        v.ID,
 		HashType:  "pHash",
 		HashValue: h,
 		Duration:  v.Duration,

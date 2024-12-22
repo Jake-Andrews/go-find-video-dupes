@@ -39,8 +39,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error getting videos from data, err: %v\n", err)
 	}
-	// create a list of map[path (string)]models.Video from dbVideos
-	// if map[path] exists and size/etc...match, don't add
 	videosNotInDB := videoExistsInDB(videos, dbVideos)
 
 	validVideos := make([]models.Video, 0, len(videosNotInDB))
@@ -57,7 +55,6 @@ func main() {
 	var pHashes []*models.Videohash
 	for _, v := range validVideos {
 		pHash, screenshots, err := phash.Create(vp, &v)
-		log.Printf("Number of sc's: %d", len(screenshots.Screenshots))
 		if err != nil {
 			log.Printf("Error, trying to generate pHash, fileName: %q, err: %v", v.FileName, err)
 			continue
@@ -66,7 +63,7 @@ func main() {
 
 		tmp := []*models.Videohash{pHash}
 		if err := repo.CreateVideo(context.Background(), &v, tmp, screenshots); err != nil {
-			log.Printf("FAILED to create video: %v", err)
+			log.Printf("FAILED to create video in DB, skipping video: %v", err)
 			continue
 		}
 		log.Println(v)
@@ -84,6 +81,9 @@ func main() {
 	if err != nil {
 		log.Println(err)
 	}
+	if len(fVideos) != len(fHashes) {
+		log.Fatalf("Error fVideos len: %d, fHashes:%d", len(fVideos), len(fHashes))
+	}
 
 	for _, h := range fHashes {
 		log.Println("sneed")
@@ -95,23 +95,30 @@ func main() {
 	}
 
 	log.Println("Starting to match hashes")
-
 	hashDuplicates, err := duplicate.FindVideoDuplicates(fHashes)
 	if err != nil {
 		log.Fatalf("Error trying to determine duplicates, err: %v", err)
 	}
+	repo.BulkUpdateVideohashes(context.Background(), fHashes)
 
 	log.Println(hashDuplicates)
 	log.Println("Printing duplicate video groups:")
 	for i := 0; i < len(hashDuplicates); i++ {
 		log.Printf("Video group #%d", i)
 		for _, k := range hashDuplicates[i] {
-			j := k - 1
+			j := k - 1 // sqlite3 primary key auto increment start at 1
 			log.Printf("Filename: %q, path: %q", fVideos[j].FileName, fVideos[j].Path)
 		}
 	}
-	// writeDuplicatesToJSON(hashDuplicates, fVideos, "duplicates.json")
+
+	duplicateVideoData, err := repo.GetDuplicateVideoData(context.Background())
+	if err != nil {
+		log.Println(err)
+	}
+	log.Println(duplicateVideoData[0].Video.Path)
 }
+
+// writeDuplicatesToJSON(hashDuplicates, fVideos, "dups.json")
 
 func videoExistsInDB(v []models.Video, dbVideos []*models.Video) []models.Video {
 	// map[filepath (string)]models.Video quickly check if video exists in DB

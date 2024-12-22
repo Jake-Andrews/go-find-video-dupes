@@ -21,6 +21,7 @@ func FindVideoDuplicates(hashes []*models.Videohash) ([][]int, error) {
 		if video.Bucket == -1 {
 			log.Printf("Video %d has no bucket, assigning to a bucket...\n", i)
 			assignToExistingOrNewBucket(video, i, hashes, options)
+			log.Println(video)
 		} else {
 			log.Printf("Video: %d has no bucket, video: %v", i, video)
 		}
@@ -33,7 +34,7 @@ func initializeBuckets(hashes []*models.Videohash) {
 	log.Println("Initializing buckets...")
 	for _, video := range hashes {
 		video.Bucket = -1
-		video.Neighbours = nil
+		video.Neighbours = []int{}
 	}
 }
 
@@ -69,7 +70,7 @@ func findNeighbors(index int, hashes []*models.Videohash, options DuplicateOptio
 
 	// Directly compare the hash string
 	for i, neighbor := range hashes {
-		if index == i || currentVideo.VideoID == neighbor.VideoID {
+		if index == i || currentVideo.ID == neighbor.ID {
 			continue // Skip self and identical videos
 		}
 
@@ -122,7 +123,7 @@ func collectBuckets(hashes []*models.Videohash) [][]int {
 	bucketMap := make(map[int][]int)
 	for _, video := range hashes {
 		if video.Bucket != -1 {
-			bucketMap[video.Bucket] = append(bucketMap[video.Bucket], int(video.VideohashID))
+			bucketMap[video.Bucket] = append(bucketMap[video.Bucket], int(video.ID))
 		}
 	}
 
@@ -138,7 +139,7 @@ func collectBuckets(hashes []*models.Videohash) [][]int {
 }
 
 func IsSimilarTo(hash1 *models.Videohash, hash2 *models.Videohash, options DuplicateOptions) (bool, error) {
-	log.Printf("Comparing video %d with video %d for similarity...\n", hash1.VideohashID, hash2.VideohashID)
+	log.Printf("Comparing video %d with video %d for similarity...\n", hash1.ID, hash2.ID)
 
 	if math.Abs(float64(hash1.Duration)-float64(hash2.Duration)) > float64(options.MaxDurationDiff) {
 		log.Printf("Videos have different durations (diff: %f), not similar.\n", math.Abs(float64(hash1.Duration)-float64(hash2.Duration)))
@@ -149,7 +150,7 @@ func IsSimilarTo(hash1 *models.Videohash, hash2 *models.Videohash, options Dupli
 	if err != nil {
 		return false, err
 	}
-	log.Printf("Hash distance between video %d and video %d: %d\n", hash1.VideohashID, hash2.VideohashID, distance)
+	log.Printf("Hash distance between video %d and video %d: %d\n", hash1.ID, hash2.ID, distance)
 	if distance > options.MaxHashDistance {
 		log.Printf("Hash distance exceeds max limit (%d > %d), not similar.\n", distance, options.MaxHashDistance)
 		return false, nil

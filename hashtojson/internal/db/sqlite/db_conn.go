@@ -25,9 +25,9 @@ func InitDB(dbPath string) *sql.DB {
 		log.Fatalf("Error setting PRAGMA foreign_keys = ON: %v\n", err)
 	}
 
-	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS video (
-			videoID INTEGER PRIMARY KEY AUTOINCREMENT,
+	_, err = db.Exec(
+		`CREATE TABLE IF NOT EXISTS video (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			path TEXT NOT NULL,
 			fileName TEXT NOT NULL,
 			createdAt DATETIME,
@@ -46,36 +46,36 @@ func InitDB(dbPath string) *sql.DB {
 			isHardLink INTEGER,
 			inode INTEGER,
 			device INTEGER
-		);
-	`)
+		);`,
+	)
 	if err != nil {
 		log.Fatalf("Error initializing the video table: %v\n", err)
 	}
 
-	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS videohash (
-			videohashID INTEGER PRIMARY KEY AUTOINCREMENT,
-			videoID INTEGER NOT NULL,
+	_, err = db.Exec(
+		`CREATE TABLE IF NOT EXISTS videohash (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			FK_videohash_video INTEGER NOT NULL,
 			hashValue TEXT NOT NULL,
 			hashType TEXT NOT NULL,
 			duration INTEGER NOT NULL,
 			neighbours TEXT,
 			bucket INTEGER,
-			FOREIGN KEY (videoID) REFERENCES video (videoID) ON DELETE CASCADE
-		);
-	`)
+			FOREIGN KEY (FK_videohash_video) REFERENCES video (id) ON DELETE CASCADE
+		);`,
+	)
 	if err != nil {
 		log.Fatalf("Error initializing the videohash table: %v\n", err)
 	}
 
-	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS screenshot (
-			screenshotID INTEGER PRIMARY KEY AUTOINCREMENT,
-            videohashID INTEGER NOT NULL,
-            screenshots TEXT NOT NULL,
-			FOREIGN KEY (videohashID) REFERENCES videohash (videohashID) ON DELETE CASCADE
-		);
-	`)
+	_, err = db.Exec(
+		`CREATE TABLE IF NOT EXISTS screenshot (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			FK_screenshot_videohash INTEGER NOT NULL,
+			screenshots TEXT NOT NULL,
+			FOREIGN KEY (FK_screenshot_videohash) REFERENCES videohash (id) ON DELETE CASCADE
+		);`,
+	)
 	if err != nil {
 		log.Fatalf("Error initializing the screenshot table: %v\n", err)
 	}
