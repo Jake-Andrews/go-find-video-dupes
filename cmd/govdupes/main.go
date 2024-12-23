@@ -20,7 +20,6 @@ import (
 	phash "govdupes/internal/hash"
 
 	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/theme"
 	_ "modernc.org/sqlite"
 )
 
@@ -119,10 +118,7 @@ func main() {
 
 	a := app.New()
 	w := a.NewWindow("Duplicate Videos Demo")
-	w.SetContent(ui.CreateUI(duplicateVideoData))
-
-	// Optional: set a theme
-	a.Settings().SetTheme(theme.LightTheme())
+	w.SetContent(ui.CreateUI(a, duplicateVideoData))
 
 	// Show and run
 	w.ShowAndRun()

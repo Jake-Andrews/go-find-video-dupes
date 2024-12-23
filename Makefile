@@ -5,7 +5,7 @@ MAIN_GO_FILE=cmd/govdupes/main.go
 # Database file to delete after running the program
 DB_FILE=videos.db
 
-all: run clean_db
+all: run clean_db clean
 
 build:
 	@echo "Building the Go program..."
@@ -23,5 +23,6 @@ clean:
 	@echo "Cleaning up..."
 	@rm -f $(BINARY_NAME)
 
+# Phony targets (these are not actual files)
 .PHONY: all build run clean_db clean
 
