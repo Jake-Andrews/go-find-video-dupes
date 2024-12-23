@@ -14,5 +14,5 @@ type VideoStore interface {
 	BulkUpdateVideohashes(ctx context.Context, updates []*models.Videohash) error
 	GetVideosWithValidHashes(ctx context.Context) ([]models.Video, error)
 	GetScreenshotsForValidHashes(ctx context.Context) (map[int64]models.Screenshots, error)
-	GetDuplicateVideoData(ctx context.Context) ([]*models.VideoData, error)
+	GetDuplicateVideoData(ctx context.Context) ([][]*models.VideoData, error)
 }

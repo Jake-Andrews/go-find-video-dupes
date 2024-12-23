@@ -32,7 +32,7 @@ func NewVideoStore(DB *sql.DB) store.VideoStore {
 }
 
 // GetDuplicateVideoData retrieves data for duplicate videos.
-func (r *videoRepo) GetDuplicateVideoData(ctx context.Context) ([]*models.VideoData, error) {
+func (r *videoRepo) GetDuplicateVideoData(ctx context.Context) ([][]*models.VideoData, error) {
 	// Step 1: Fetch all videohashes
 	var videohashes []*models.Videohash
 	query := `
@@ -61,7 +61,6 @@ func (r *videoRepo) GetDuplicateVideoData(ctx context.Context) ([]*models.VideoD
 	}
 
 	// Step 4: Combine data into VideoData
-	videoDataList := make([]*models.VideoData, len(videohashes))
 	videoMap := map[int64]*models.Video{} // Map video IDs to videos for easy lookup
 
 	// Map videos by their IDs for quick lookup
@@ -70,7 +69,9 @@ func (r *videoRepo) GetDuplicateVideoData(ctx context.Context) ([]*models.VideoD
 	}
 
 	// Build VideoData list
-	for i, vh := range videohashes {
+	groupedVideoData := map[int][]*models.VideoData{} // Group by bucket (or another criterion)
+
+	for _, vh := range videohashes {
 		videoData := &models.VideoData{
 			Videohash: *vh,
 		}
@@ -89,10 +90,17 @@ func (r *videoRepo) GetDuplicateVideoData(ctx context.Context) ([]*models.VideoD
 			}
 		}
 
-		videoDataList[i] = videoData
+		// Group by bucket or other criteria
+		groupedVideoData[vh.Bucket] = append(groupedVideoData[vh.Bucket], videoData)
 	}
 
-	return videoDataList, nil
+	// Convert grouped data into a slice of slices
+	result := make([][]*models.VideoData, 0, len(groupedVideoData))
+	for _, group := range groupedVideoData {
+		result = append(result, group)
+	}
+
+	return result, nil
 }
 
 // GetVideosWithValidHashes retrieves videos that have valid hashes.
