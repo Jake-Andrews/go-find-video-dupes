@@ -3,7 +3,6 @@ package ui
 import (
 	"fmt"
 	"image/color"
-	"log"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -15,7 +14,6 @@ import (
 type DuplicatesListRow struct {
 	widget.BaseWidget
 
-	// Sub-objects for different row states
 	headerLabel         *widget.Label
 	videoLayout         *fyne.Container
 	screenshotContainer *fyne.Container
@@ -31,16 +29,15 @@ type DuplicatesListRow struct {
 func NewDuplicatesListRow() *DuplicatesListRow {
 	row := &DuplicatesListRow{
 		headerLabel:         widget.NewLabel(""),
-		screenshotContainer: container.NewWithoutLayout(), // will fill in dynamically
+		screenshotContainer: container.NewHBox(), // Horizontal layout for screenshots
 		pathLabel:           widget.NewLabel(""),
-		statsContainer:      container.NewWithoutLayout(),
+		statsContainer:      container.NewVBox(), // Use VBox for compact vertical alignment
 		codecsLabel:         widget.NewLabel(""),
-		linksContainer:      container.NewWithoutLayout(),
+		linksContainer:      container.NewVBox(), // Use VBox for compact vertical alignment
 	}
 
-	// We'll dynamically fill each container with H or V boxes
-	// The “videoLayout” has 5 columns side by side
-	row.videoLayout = container.New(layout.NewGridLayout(5),
+	// Grid layout with 5 columns for consistent alignment
+	row.videoLayout = container.New(layout.NewGridLayoutWithColumns(5),
 		row.screenshotContainer,
 		row.pathLabel,
 		row.statsContainer,
@@ -53,15 +50,10 @@ func NewDuplicatesListRow() *DuplicatesListRow {
 }
 
 func (r *DuplicatesListRow) CreateRenderer() fyne.WidgetRenderer {
-	// We'll stack a colored rectangle behind everything
 	bg := canvas.NewRectangle(r.backgroundColor())
-
-	// Put headerLabel and videoLayout in a Max container,
-	// showing one or the other. We can Hide/Show in Update().
 	overlay := container.NewStack(r.headerLabel, r.videoLayout)
-	// Alternatively, use container.NewStack if you want them layered in order.
-
 	c := container.NewStack(bg, overlay)
+
 	return &duplicatesListRowRenderer{
 		row:          r,
 		background:   bg,
@@ -71,29 +63,22 @@ func (r *DuplicatesListRow) CreateRenderer() fyne.WidgetRenderer {
 
 func (r *DuplicatesListRow) backgroundColor() color.Color {
 	if r.selected {
-		// Light transparent blue for selected
 		return color.RGBA{R: 173, G: 216, B: 230, A: 128}
 	}
-	// Transparent otherwise
 	return color.RGBA{0, 0, 0, 0}
 }
 
-// Update updates the row’s fields based on the item data
 func (r *DuplicatesListRow) Update(item duplicateListItem) {
-	log.Printf("DuplicatesListRow.Update: header=%v, selected=%v", item.IsHeader, item.Selected)
-
 	r.isHeader = item.IsHeader
 	r.selected = item.Selected
 
 	if item.IsHeader {
-		// Show the header label, hide the video layout
 		r.headerLabel.SetText(item.HeaderText)
 		r.headerLabel.Show()
 		r.videoLayout.Hide()
 		return
 	}
 
-	// It's a video row. Hide the header, show the video layout
 	r.headerLabel.Hide()
 	r.videoLayout.Show()
 
@@ -103,63 +88,42 @@ func (r *DuplicatesListRow) Update(item duplicateListItem) {
 		return
 	}
 
-	// 1) Screenshots side by side, no extra vertical space
-	// Clear the old contents
+	// Update screenshot container
 	r.screenshotContainer.Objects = nil
-
 	if len(vd.Screenshot.Screenshots) == 0 {
-		// Just show “No screenshots”
-		label := widget.NewLabel("No screenshots")
-		// Put it in a horizontal box. If you truly want zero space,
-		// you can create a custom layout. We'll do a simple HBox:
-		r.screenshotContainer.Add(container.NewHBox(label))
+		r.screenshotContainer.Add(widget.NewLabel("No screenshots"))
 	} else {
-		// If multiple screenshots, put them side by side in a horizontal layout
-		hbox := container.NewHBox()
 		for _, img := range vd.Screenshot.Screenshots {
 			fImg := canvas.NewImageFromImage(img)
 			fImg.FillMode = canvas.ImageFillContain
 			fImg.SetMinSize(fyne.NewSize(100, 100))
-			hbox.Add(fImg) // side by side
+			r.screenshotContainer.Add(fImg)
 		}
-		r.screenshotContainer.Add(hbox)
 	}
 
-	// 2) Path
+	// Path
 	r.pathLabel.SetText(vd.Video.Path)
 
-	// 3) Stats: each piece of info on its own line
-	r.statsContainer.Objects = nil
-	sizeMB := float64(vd.Video.Size) / (1024.0 * 1024.0)
-	bitrateMbps := (float64(vd.Video.BitRate) / (1024.0 * 1024.0)) * 8.0
-	dur := int(vd.Video.Duration)
-	hh, mm, ss := dur/3600, (dur%3600)/60, dur%60
-
-	// Create a vertical box of labels
-	vbStats := container.NewVBox(
-		widget.NewLabel(fmt.Sprintf("%.2f MB", sizeMB)),
-		widget.NewLabel(fmt.Sprintf("%.2f Mbps", bitrateMbps)),
+	// Stats with reduced spacing
+	r.statsContainer.Objects = []fyne.CanvasObject{
+		widget.NewLabel(fmt.Sprintf("%.2f MB", float64(vd.Video.Size)/(1024.0*1024.0))),
+		widget.NewLabel(fmt.Sprintf("%.2f Mbps", float64(vd.Video.BitRate)/1024.0/1024.0*8.0)),
 		widget.NewLabel(fmt.Sprintf("%.2f fps", vd.Video.FrameRate)),
 		widget.NewLabel(fmt.Sprintf("%dx%d", vd.Video.Width, vd.Video.Height)),
-		widget.NewLabel(fmt.Sprintf("%02d:%02d:%02d", hh, mm, ss)),
-	)
-	r.statsContainer.Add(vbStats)
+		widget.NewLabel(fmt.Sprintf("%02d:%02d:%02d", int(vd.Video.Duration)/3600, (int(vd.Video.Duration)%3600)/60, int(vd.Video.Duration)%60)),
+	}
 
-	// 4) Audio/Video codecs
+	// Codecs
 	r.codecsLabel.SetText(fmt.Sprintf("%s / %s", vd.Video.AudioCodec, vd.Video.VideoCodec))
 
-	// 5) Link info: each line on its own
-	r.linksContainer.Objects = nil
-	numHard := vd.Video.NumHardLinks - 1
-	vbLinks := container.NewVBox(
+	// Links with reduced spacing
+	r.linksContainer.Objects = []fyne.CanvasObject{
 		widget.NewLabel(fmt.Sprintf("Symbolic? %t", vd.Video.IsSymbolicLink)),
 		widget.NewLabel(fmt.Sprintf("Link: %q", vd.Video.SymbolicLink)),
 		widget.NewLabel(fmt.Sprintf("Hard? %t", vd.Video.IsHardLink)),
-		widget.NewLabel(fmt.Sprintf("Count: %d", numHard)),
-	)
-	r.linksContainer.Add(vbLinks)
+		widget.NewLabel(fmt.Sprintf("Count: %d", vd.Video.NumHardLinks-1)),
+	}
 
-	// Force a refresh of this row
 	r.Refresh()
 }
 
@@ -176,18 +140,11 @@ func (r *duplicatesListRowRenderer) Layout(size fyne.Size) {
 	r.containerAll.Resize(size)
 }
 
-//	func (r *duplicatesListRowRenderer) MinSize() fyne.Size {
-//		return r.containerAll.MinSize()
-//	}
 func (r *duplicatesListRowRenderer) MinSize() fyne.Size {
-	// Get the current minimum size of the container
 	minSize := r.containerAll.MinSize()
-
-	// Adjust the height to be at least 120
 	if minSize.Height < 120 {
 		minSize.Height = 120
 	}
-
 	return minSize
 }
 
