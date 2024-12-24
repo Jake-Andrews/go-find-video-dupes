@@ -19,7 +19,6 @@ import (
 
 	phash "govdupes/internal/hash"
 
-	"fyne.io/fyne/v2/app"
 	_ "modernc.org/sqlite"
 )
 
@@ -115,13 +114,8 @@ func main() {
 	if err != nil {
 		log.Println(err)
 	}
-
-	a := app.New()
-	w := a.NewWindow("Duplicate Videos Demo")
-	w.SetContent(ui.CreateUI(a, duplicateVideoData))
-
-	// Show and run
-	w.ShowAndRun()
+	log.Println(len(duplicateVideoData))
+	ui.CreateUI(duplicateVideoData)
 }
 
 // writeDuplicatesToJSON(hashDuplicates, fVideos, "dups.json")
