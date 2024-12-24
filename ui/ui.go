@@ -3,8 +3,6 @@ package ui
 import (
 	"fmt"
 	"image/color"
-	"log"
-	"strconv"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -30,9 +28,9 @@ func (f *forcedVariant) Color(n fyne.ThemeColorName, v fyne.ThemeVariant) color.
 	return f.Theme.Color(n, v)
 }
 
+// CreateUI is your main entry point that builds two tabs: "Duplicates" and "Theme".
 func CreateUI(a fyne.App, videoData [][]*models.VideoData) fyne.CanvasObject {
 	duplicatesTab := buildDuplicatesTab(videoData)
-
 	themeTab := buildThemeTab(a)
 
 	tabs := container.NewAppTabs(
@@ -40,10 +38,10 @@ func CreateUI(a fyne.App, videoData [][]*models.VideoData) fyne.CanvasObject {
 		container.NewTabItem("Theme", themeTab),
 	)
 	tabs.SetTabLocation(container.TabLocationTop)
-
 	return tabs
 }
 
+// A tab that lets the user switch between dark/light themes
 func buildThemeTab(a fyne.App) fyne.CanvasObject {
 	themes := container.NewGridWithColumns(2,
 		widget.NewButton("Dark", func() {
@@ -53,11 +51,13 @@ func buildThemeTab(a fyne.App) fyne.CanvasObject {
 			a.Settings().SetTheme(&forcedVariant{Theme: theme.DefaultTheme(), isDark: false})
 		}),
 	)
-	themeContainer := container.NewWithoutLayout(themes)
-	themeContainer.Layout = &zeroLayout{}
-	return themeContainer
+	return themes
 }
 
+// ---------------------------------------------------------------------------
+// Build a single table of all data using one GridLayout(5) so that
+// header columns line up perfectly with data columns.
+// ---------------------------------------------------------------------------
 func buildDuplicatesTab(videoData [][]*models.VideoData) fyne.CanvasObject {
 	if len(videoData) == 0 {
 		return widget.NewLabel("No duplicate videos found.")
@@ -65,285 +65,235 @@ func buildDuplicatesTab(videoData [][]*models.VideoData) fyne.CanvasObject {
 
 	mainVBox := container.NewVBox()
 
-	// global header row (not repeated per group).
+	// Header Row
 	header := container.New(layout.NewGridLayout(5),
-		largeLabel("Screenshots"),
-		largeLabel("Path"),
-		largeLabel("Size\nBitrate\nFPS\nResolution\nDuration)"),
-		largeLabel("Codecs\n(Audio / Video)"),
-		largeLabel("Links\nSymbolic\nSymbolicPath\nHard\n#Hard"),
+		leftAlignedText("Screenshots"),
+		leftAlignedText("Path"),
+		container.NewVBox(
+			leftAlignedText("Size"),
+			leftAlignedText("Bitrate"),
+			leftAlignedText("FPS"),
+			leftAlignedText("Resolution"),
+			leftAlignedText("Duration"),
+		),
+		container.NewVBox(
+			leftAlignedText("Codecs"),
+			leftAlignedText("(Audio / Video)"),
+		),
+		container.NewVBox(
+			leftAlignedText("Links"),
+			leftAlignedText("Symbolic"),
+			leftAlignedText("SymbolicPath"),
+			leftAlignedText("Hard"),
+			leftAlignedText("#Hard"),
+		),
 	)
-	headerContainer := container.NewWithoutLayout(header)
-	headerContainer.Layout = &zeroLayout{}
+	headerContainer := container.NewPadded(header)
+	headerContainer = container.NewVBox(header)
+	headerContainer.Objects = []fyne.CanvasObject{header} // Ensure it contains the header
+	headerContainer.Refresh()                             // Apply updates
+
 	mainVBox.Add(headerContainer)
 	mainVBox.Add(widget.NewSeparator())
 
+	// Grouped Data Rows
 	for i, group := range videoData {
 		if len(group) == 0 {
 			continue
 		}
-		groupVBox := container.NewVBox()
 
-		title := largeLabel(fmt.Sprintf("Group %d (Total %d duplicates)", i+1, len(group)))
-		title.TextStyle.Bold = true
-		groupVBox.Add(title)
+		groupTitle := canvas.NewText(fmt.Sprintf("Group %d (Total %d duplicates)", i+1, len(group)), color.Black)
+		groupTitle.TextSize = 16
+		groupTitle.TextStyle = fyne.TextStyle{Bold: true}
+		groupContainer := container.NewVBox(container.NewPadded(groupTitle))
 
 		for _, vd := range group {
 			if vd == nil {
 				continue
 			}
-			row := newVideoRow(vd)
-			groupVBox.Add(row)
+			row := buildDataRow(vd)
+			groupContainer.Add(row)
 		}
 
-		groupVBox.Add(widget.NewLabel(""))
-		groupVBox.Add(widget.NewSeparator())
-
-		mainVBox.Add(groupVBox)
+		// Add group to main layout
+		mainVBox.Add(container.NewVBox(
+			widget.NewSeparator(),
+			groupContainer,
+			widget.NewSeparator(),
+		))
 	}
 
-	// Wrap everything in a scroll container
-	outer := container.NewWithoutLayout(mainVBox)
-	outer.Layout = &zeroLayout{}
-
-	scrollable := container.NewVScroll(outer)
+	// Scrollable Container
+	scrollable := container.NewVScroll(mainVBox)
 	scrollable.SetMinSize(fyne.NewSize(0, 0))
-
 	return scrollable
-}
-
-func largeLabel(txt string) *canvas.Text {
-	c := canvas.NewText(txt, color.Black)
-	c.TextSize = 15
-	return c
-}
-
-type zeroLayout struct{}
-
-func (z *zeroLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
-	for _, o := range objects {
-		osize := o.MinSize()
-		o.Move(fyne.NewPos(0, 0))
-		o.Resize(osize)
-	}
-}
-
-func (z *zeroLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
-	var w, h float32
-	for _, o := range objects {
-		ms := o.MinSize()
-		if ms.Width > w {
-			w = ms.Width
-		}
-		if ms.Height > h {
-			h = ms.Height
-		}
-	}
-	return fyne.NewSize(w, h)
-}
-
-type videoRow struct {
-	widget.BaseWidget
-	vd         *models.VideoData
-	isSelected bool
-}
-
-func newVideoRow(vd *models.VideoData) *videoRow {
-	row := &videoRow{vd: vd}
-	row.ExtendBaseWidget(row)
-	return row
-}
-
-func (r *videoRow) Tapped(_ *fyne.PointEvent) {
-	r.isSelected = !r.isSelected
-	r.Refresh()
-}
-func (r *videoRow) TappedSecondary(_ *fyne.PointEvent) {}
-
-func (r *videoRow) CreateRenderer() fyne.WidgetRenderer {
-	log.Println("Screenshots MinSize:", r.buildScreenshotsColumn().MinSize())
-	log.Println("Path MinSize:", r.buildPathColumn().MinSize())
-	log.Println("Stats MinSize:", r.buildStatsColumn().MinSize())
-	log.Println("Codecs MinSize:", r.buildCodecsColumn().MinSize())
-	log.Println("Links MinSize:", r.buildLinksColumn().MinSize())
-
-	columns := container.New(layout.NewGridLayout(5),
-		r.buildScreenshotsColumn(),
-		r.buildPathColumn(),
-		r.buildStatsColumn(),
-		r.buildCodecsColumn(),
-		r.buildLinksColumn(),
-	)
-
-	// Transparent background rectangle for selection highlight
-	bg := canvas.NewRectangle(color.RGBA{0, 0, 0, 0})
-
-	overlay := container.NewWithoutLayout(bg, columns)
-	overlay.Layout = &rowOverlayLayout{}
-
-	return &videoRowRenderer{
-		row:        r,
-		background: bg,
-		content:    columns,
-		overlay:    overlay,
-		objects:    []fyne.CanvasObject{bg, columns},
-	}
 }
 
 type rowOverlayLayout struct{}
 
-func (l *rowOverlayLayout) Layout(objs []fyne.CanvasObject, size fyne.Size) {
-	if len(objs) != 2 {
+func (l *rowOverlayLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	if len(objects) < 2 {
 		return
 	}
-	bg := objs[0]
-	cols := objs[1]
+	bg := objects[0]
+	row := objects[1]
 
-	log.Println(size)
 	bg.Resize(size)
 	bg.Move(fyne.NewPos(0, 0))
-
-	log.Println(cols.MinSize())
-	cols.Resize(cols.MinSize())
-	cols.Move(fyne.NewPos(0, 0))
+	row.Resize(size)
+	row.Move(fyne.NewPos(0, 0))
 }
 
-func (l *rowOverlayLayout) MinSize(objs []fyne.CanvasObject) fyne.Size {
-	if len(objs) < 2 {
+func (l *rowOverlayLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	if len(objects) < 2 {
 		return fyne.NewSize(0, 0)
 	}
-	return objs[1].MinSize()
+	return objects[1].MinSize()
 }
 
-type videoRowRenderer struct {
-	row        *videoRow
-	background *canvas.Rectangle
-	content    fyne.CanvasObject
-	overlay    fyne.CanvasObject
-	objects    []fyne.CanvasObject
+type tappableRow struct {
+	widget.BaseWidget
+	row      fyne.CanvasObject
+	bg       *canvas.Rectangle
+	isTapped bool
 }
 
-func (r *videoRowRenderer) Layout(size fyne.Size) {
-	r.overlay.Resize(size)
+func newTappableRow(row fyne.CanvasObject) *tappableRow {
+	bg := canvas.NewRectangle(color.Transparent)
+	w := &tappableRow{row: row, bg: bg}
+	w.ExtendBaseWidget(w)
+	return w
 }
 
-func (r *videoRowRenderer) MinSize() fyne.Size {
-	return r.overlay.MinSize()
+func (w *tappableRow) CreateRenderer() fyne.WidgetRenderer {
+	overlay := container.NewWithoutLayout(w.bg, w.row)
+	return &tappableRowRenderer{row: w, content: overlay}
 }
 
-func (r *videoRowRenderer) Refresh() {
-	if r.row.isSelected {
-		// Dark partially transparent blue
-		r.background.FillColor = color.RGBA{R: 50, G: 50, B: 255, A: 80}
-	} else {
-		r.background.FillColor = color.RGBA{0, 0, 0, 0}
+type tappableRowRenderer struct {
+	row     *tappableRow
+	content *fyne.Container
+}
+
+func (r *tappableRowRenderer) Layout(size fyne.Size) {
+	r.row.bg.Resize(size)
+	r.row.row.Resize(size)
+}
+
+func (r *tappableRowRenderer) MinSize() fyne.Size {
+	return r.row.row.MinSize()
+}
+
+func (r *tappableRowRenderer) Refresh() {
+	r.row.bg.FillColor = color.Transparent
+	if r.row.isTapped {
+		r.row.bg.FillColor = color.RGBA{50, 150, 255, 80} // Light transparent blue
 	}
-	r.background.Refresh()
-	r.content.Refresh()
+	r.row.bg.Refresh()
 }
-func (r *videoRowRenderer) Objects() []fyne.CanvasObject { return r.objects }
-func (r *videoRowRenderer) Destroy()                     {}
 
-func (r *videoRow) buildScreenshotsColumn() fyne.CanvasObject {
-	imgs := r.vd.Screenshot.Screenshots
+func (r *tappableRowRenderer) Objects() []fyne.CanvasObject {
+	return []fyne.CanvasObject{r.row.bg, r.row.row}
+}
+
+func (r *tappableRowRenderer) Destroy() {}
+
+func (w *tappableRow) Tapped(_ *fyne.PointEvent) {
+	w.isTapped = !w.isTapped
+	w.Refresh()
+}
+
+func (w *tappableRow) TappedSecondary(_ *fyne.PointEvent) {}
+
+// Builds a single row of data, with click highlighting
+
+func buildDataRow(vd *models.VideoData) fyne.CanvasObject {
+	columns := container.New(layout.NewGridLayout(5),
+		buildScreenshotsColumn(vd),
+		buildPathColumn(vd),
+		buildStatsColumn(vd),
+		buildCodecsColumn(vd),
+		buildLinksColumn(vd),
+	)
+
+	// Use tappableRow for the clickable functionality
+	row := newTappableRow(columns)
+	return row
+}
+
+// Column Builders
+func buildScreenshotsColumn(vd *models.VideoData) fyne.CanvasObject {
+	imgs := vd.Screenshot.Screenshots
 	if len(imgs) == 0 {
-		return largeLabel("No screenshots")
+		return leftAlignedText("No screenshots")
 	}
 
 	var imageWidgets []fyne.CanvasObject
 	for _, img := range imgs {
 		fImg := canvas.NewImageFromImage(img)
 		fImg.FillMode = canvas.ImageFillContain
-		fImg.SetMinSize(fyne.NewSize(60, 40))
+		fImg.SetMinSize(fyne.NewSize(64, 64))
 		imageWidgets = append(imageWidgets, fImg)
 	}
 
 	return container.New(&NoSpaceHBox{}, imageWidgets...)
 }
 
-func (r *videoRow) buildPathColumn() fyne.CanvasObject {
-	txt := canvas.NewText(r.vd.Video.Path, color.Black)
-	txt.TextSize = 14
-	return txt
+func buildPathColumn(vd *models.VideoData) fyne.CanvasObject {
+	return leftAlignedText(vd.Video.Path)
 }
 
-func (r *videoRow) buildStatsColumn() fyne.CanvasObject {
-	v := r.vd.Video
-
-	sizeMB := float64(v.Size) / (1024 * 1024)
-	var sizeStr string
-	sizeStr = fmt.Sprintf("%.2f MB", sizeMB)
-	if sizeMB >= 1024 {
-		sizeGB := sizeMB / 1024
-		sizeStr = fmt.Sprintf("%.2f GB", sizeGB)
-	}
-	line1 := canvas.NewText(sizeStr, color.Black)
-
-	bitrateMbps := (float64(v.BitRate) / (1024 * 1024)) * 8
-	bitRate := fmt.Sprintf("%.2f Mbps", bitrateMbps)
-	line2 := canvas.NewText(bitRate, color.Black)
-
-	log.Println(v.FrameRate)
-	fps := fmt.Sprintf("%.2f fps", v.FrameRate)
-	line3 := canvas.NewText(fps, color.Black)
-
-	resolution := fmt.Sprintf("%dx%d", v.Width, v.Height)
-	line4 := canvas.NewText(resolution, color.Black)
-
-	totalSec := int(v.Duration)
+func buildStatsColumn(vd *models.VideoData) fyne.CanvasObject {
+	v := vd.Video
+	totalSec := int(v.Duration) // Cast to int for modulo operations
 	hh := totalSec / 3600
 	mm := (totalSec % 3600) / 60
 	ss := totalSec % 60
-	dur := fmt.Sprintf("%02d:%02d:%02d", hh, mm, ss)
-	line5 := canvas.NewText(dur, color.Black)
 
-	txt := container.NewVBox(
-		line1,
-		line2,
-		line3,
-		line4,
-		line5,
+	stats := container.NewVBox(
+		leftAlignedText(fmt.Sprintf("%.2f MB", float64(v.Size)/(1024*1024))),
+		leftAlignedText(fmt.Sprintf("%.2f Mbps", (float64(v.BitRate)/(1024*1024))*8)),
+		leftAlignedText(fmt.Sprintf("%.2f fps", v.FrameRate)),
+		leftAlignedText(fmt.Sprintf("%dx%d", v.Width, v.Height)),
+		leftAlignedText(fmt.Sprintf("%02d:%02d:%02d", hh, mm, ss)),
 	)
-	return txt
+	return stats
 }
 
-func (r *videoRow) buildCodecsColumn() fyne.CanvasObject {
-	v := r.vd.Video
-	txt := fmt.Sprintf("%s / %s", v.AudioCodec, v.VideoCodec)
+func buildCodecsColumn(vd *models.VideoData) fyne.CanvasObject {
+	v := vd.Video
+	return leftAlignedText(fmt.Sprintf("%s / %s", v.AudioCodec, v.VideoCodec))
+}
+
+func buildLinksColumn(vd *models.VideoData) fyne.CanvasObject {
+	v := vd.Video
+	links := container.NewVBox(
+		leftAlignedText(fmt.Sprintf("Symbolic: %t", v.IsSymbolicLink)),
+		leftAlignedText(fmt.Sprintf("SymbolicPath: %s", v.SymbolicLink)),
+		leftAlignedText(fmt.Sprintf("Hard: %t", v.IsHardLink)),
+		leftAlignedText(fmt.Sprintf("#Hard: %d", v.NumHardLinks)),
+	)
+	return links
+}
+
+// ---------------------------------------------------------------------------
+// Helper Functions
+// ---------------------------------------------------------------------------
+func largeLabel(txt string) *canvas.Text {
 	c := canvas.NewText(txt, color.Black)
-	c.TextSize = 14
+	c.TextSize = 15
 	return c
 }
 
-// Show symbolics/hardlinks in a partially transparent colored column
-func (r *videoRow) buildLinksColumn() fyne.CanvasObject {
-	v := r.vd.Video
-	nhl := strconv.FormatUint(v.NumHardLinks, 10)
-
-	txt := fmt.Sprintf("%t / %s\n%t / %s",
-		v.IsSymbolicLink, v.SymbolicLink,
-		v.IsHardLink, nhl,
-	)
-	lbl := canvas.NewText(txt, color.Black)
-	lbl.TextSize = 14
-
-	bgCol := color.RGBA{0, 0, 0, 0}
-	switch {
-	case v.IsHardLink:
-		// Dark red
-		bgCol = color.RGBA{R: 180, G: 0, B: 0, A: 100}
-	case v.IsSymbolicLink:
-		// Dark green
-		bgCol = color.RGBA{R: 0, G: 180, B: 0, A: 100}
-	}
-
-	bgRect := canvas.NewRectangle(bgCol)
-	cont := container.NewWithoutLayout(bgRect, lbl)
-	cont.Layout = &columnOverlayLayout{}
-	return cont
+// A simple left-aligned text
+func leftAlignedText(text string) *canvas.Text {
+	txt := canvas.NewText(text, color.Black)
+	txt.TextSize = 14
+	txt.Alignment = fyne.TextAlignLeading
+	return txt
 }
 
-// columnOverlayLayout places the background behind the text, no spacing
+// The same columnOverlayLayout as before
 type columnOverlayLayout struct{}
 
 func (l *columnOverlayLayout) Layout(objs []fyne.CanvasObject, size fyne.Size) {
@@ -368,6 +318,8 @@ func (l *columnOverlayLayout) MinSize(objs []fyne.CanvasObject) fyne.Size {
 	return objs[1].MinSize()
 }
 
+// NoSpaceHBox: a layout that places children horizontally at x offsets
+// with zero spacing.
 type NoSpaceHBox struct{}
 
 func (l *NoSpaceHBox) Layout(objects []fyne.CanvasObject, containerSize fyne.Size) {
@@ -392,4 +344,3 @@ func (l *NoSpaceHBox) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	}
 	return fyne.NewSize(w, h)
 }
-
