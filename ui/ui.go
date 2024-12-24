@@ -15,24 +15,10 @@ import (
 	"govdupes/internal/models"
 )
 
-// forcedVariant forces dark/light theme.
-type forcedVariant struct {
-	fyne.Theme
-	isDark bool
-}
-
-func (f *forcedVariant) Color(n fyne.ThemeColorName, _ fyne.ThemeVariant) color.Color {
-	if f.isDark {
-		return f.Theme.Color(n, theme.VariantDark)
-	}
-	return f.Theme.Color(n, theme.VariantLight)
-}
-
 func CreateUI(videoData [][]*models.VideoData) {
 	log.Println("Starting CreateUI")
 
 	a := app.New()
-	window := a.NewWindow("sneed")
 	log.Println("Fyne app initialized")
 
 	log.Println("Creating DuplicatesList widget")
@@ -55,23 +41,12 @@ func CreateUI(videoData [][]*models.VideoData) {
 	tabs.SetTabLocation(container.TabLocationTop)
 
 	log.Println("Creating main application window")
+	window := a.NewWindow("govdupes")
 	window.SetContent(tabs)
 	window.Resize(fyne.NewSize(1024, 768))
 
 	log.Println("Showing application window")
 	window.ShowAndRun()
-}
-
-// A tab that lets the user switch between dark/light themes.
-func buildThemeTab(a fyne.App) fyne.CanvasObject {
-	return container.NewGridWithColumns(2,
-		widget.NewButton("Dark", func() {
-			a.Settings().SetTheme(&forcedVariant{Theme: theme.DefaultTheme(), isDark: true})
-		}),
-		widget.NewButton("Light", func() {
-			a.Settings().SetTheme(&forcedVariant{Theme: theme.DefaultTheme(), isDark: false})
-		}),
-	)
 }
 
 // buildDuplicatesTab creates a scrollable view containing each group of duplicates.
@@ -177,3 +152,27 @@ func buildLinksCell(vd *models.VideoData) fyne.CanvasObject {
 	)
 }
 
+// A tab that lets the user switch between dark/light themes.
+func buildThemeTab(a fyne.App) fyne.CanvasObject {
+	return container.NewGridWithColumns(2,
+		widget.NewButton("Dark", func() {
+			a.Settings().SetTheme(&forcedVariant{Theme: theme.DefaultTheme(), isDark: true})
+		}),
+		widget.NewButton("Light", func() {
+			a.Settings().SetTheme(&forcedVariant{Theme: theme.DefaultTheme(), isDark: false})
+		}),
+	)
+}
+
+// forcedVariant forces dark/light theme.
+type forcedVariant struct {
+	fyne.Theme
+	isDark bool
+}
+
+func (f *forcedVariant) Color(n fyne.ThemeColorName, _ fyne.ThemeVariant) color.Color {
+	if f.isDark {
+		return f.Theme.Color(n, theme.VariantDark)
+	}
+	return f.Theme.Color(n, theme.VariantLight)
+}

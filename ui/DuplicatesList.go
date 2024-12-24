@@ -16,7 +16,7 @@ import (
 type duplicateListItem struct {
 	IsHeader   bool
 	GroupIndex int    // which group this belongs to
-	HeaderText string // only used if IsHeader == true
+	HeaderText string // only used if IsHeader == true (not a video)
 
 	VideoData *models.VideoData // only used if IsHeader == false
 	Selected  bool
@@ -32,7 +32,8 @@ type DuplicatesList struct {
 	items []duplicateListItem
 
 	// The underlying Fyne List
-	list *widget.List
+	list        *widget.List
+	OnRowTapped func(itemID int, selected bool)
 }
 
 // NewDuplicatesList creates and returns our custom DuplicatesList
@@ -42,6 +43,10 @@ func NewDuplicatesList(videoData [][]*models.VideoData) *DuplicatesList {
 	dl := &DuplicatesList{}
 	// Let Fyne know this is a custom widget
 	dl.ExtendBaseWidget(dl)
+
+	dl.OnRowTapped = func(itemID int, selected bool) {
+		dl.handleRowTapped(itemID, selected)
+	}
 
 	// ------------------------------------------------------
 	// Create the Fyne widget.List, which handles scrolling
@@ -56,21 +61,13 @@ func NewDuplicatesList(videoData [][]*models.VideoData) *DuplicatesList {
 		},
 		// createItemFunc
 		func() fyne.CanvasObject {
-			return NewDuplicatesListRow()
+			return NewDuplicatesListRow(dl.OnRowTapped)
 		},
 		// updateItemFunc
 		func(itemID widget.ListItemID, co fyne.CanvasObject) {
 			dl.updateListRow(itemID, co)
 		},
 	)
-
-	// Single selection for now:
-	dl.list.OnSelected = func(id widget.ListItemID) {
-		dl.handleSelection(id)
-	}
-	dl.list.OnUnselected = func(id widget.ListItemID) {
-		dl.handleUnselection(id)
-	}
 
 	// Flatten the initial data
 	log.Println("Setting video data")
@@ -129,7 +126,6 @@ func (dl *DuplicatesList) updateListRow(itemID widget.ListItemID, co fyne.Canvas
 	log.Printf("Updating item with ID: %d", itemID)
 
 	dl.mutex.RLock()
-	defer dl.mutex.RUnlock()
 
 	if itemID < 0 || itemID >= len(dl.items) {
 		log.Printf("Item ID %d out of bounds", itemID)
@@ -138,19 +134,23 @@ func (dl *DuplicatesList) updateListRow(itemID widget.ListItemID, co fyne.Canvas
 
 	row, ok := co.(*DuplicatesListRow)
 	if !ok {
-		// Non-fatal. Just skip it.
 		log.Printf("Type assertion failed for itemID %d", itemID)
 		return
 	}
 
-	item := dl.items[itemID]
-	row.Update(item)
+	row.itemID = itemID
+	dl.mutex.RUnlock()
+	row.Update(dl.items[itemID])
 }
 
 // handleSelection is called when the list item is selected
 func (dl *DuplicatesList) handleSelection(itemID int) {
 	dl.mutex.Lock()
+	log.Printf("Selecting itemID: %d", itemID)
+	log.Printf("IsHeader: %t, Selected: %t", dl.items[itemID].IsHeader, dl.items[itemID].Selected)
+
 	if itemID < 0 || itemID >= len(dl.items) {
+		log.Printf("Invalid selection, itemID: %d, len(dl.items): %d", itemID, len(dl.items))
 		dl.mutex.Unlock()
 		return
 	}
@@ -161,12 +161,19 @@ func (dl *DuplicatesList) handleSelection(itemID int) {
 		return
 	}
 
-	// Single-select: Unselect all, then select this one
-	for i := range dl.items {
-		dl.items[i].Selected = false
+	// If the item is not a header and is selected, unselect it
+	if dl.items[itemID].Selected {
+		dl.items[itemID].Selected = false
+		dl.mutex.Unlock()
+		dl.list.Unselect(itemID)
+		dl.list.Refresh()
+		return
 	}
+
+	// If the item is not a header and is not selected, select it
 	dl.items[itemID].Selected = true
 	dl.mutex.Unlock()
+	dl.list.Select(itemID)
 
 	// Refresh outside the lock
 	dl.list.Refresh()
@@ -175,13 +182,16 @@ func (dl *DuplicatesList) handleSelection(itemID int) {
 // handleUnselection if you want multi-select or toggling
 func (dl *DuplicatesList) handleUnselection(itemID int) {
 	dl.mutex.Lock()
+	log.Printf("Unselecting itemID: %d", itemID)
 	if itemID < 0 || itemID >= len(dl.items) {
 		dl.mutex.Unlock()
 		return
 	}
 
 	if dl.items[itemID].Selected {
+		log.Println(itemID)
 		dl.items[itemID].Selected = false
+		dl.list.Unselect(itemID)
 	}
 	dl.mutex.Unlock()
 
@@ -214,3 +224,24 @@ func (dl *DuplicatesList) ClearSelection() {
 	dl.list.Refresh()
 }
 
+func (dl *DuplicatesList) handleRowTapped(itemID int, selected bool) {
+	dl.mutex.Lock()
+
+	if itemID < 0 || itemID >= len(dl.items) {
+		dl.mutex.Unlock()
+		return
+	}
+
+	item := &dl.items[itemID]
+
+	if item.IsHeader {
+		dl.mutex.Unlock()
+		// Headers cannot be selected
+		return
+	}
+
+	// Toggle the selection state
+	item.Selected = selected
+	dl.mutex.Unlock()
+	dl.list.Refresh()
+}

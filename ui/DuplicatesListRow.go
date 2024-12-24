@@ -24,9 +24,12 @@ type DuplicatesListRow struct {
 
 	isHeader bool
 	selected bool
+
+	onTapped func(itemID int, selected bool)
+	itemID   int
 }
 
-func NewDuplicatesListRow() *DuplicatesListRow {
+func NewDuplicatesListRow(onTapped func(itemID int, selected bool)) *DuplicatesListRow {
 	row := &DuplicatesListRow{
 		headerLabel:         widget.NewLabel(""),
 		screenshotContainer: container.NewHBox(), // Horizontal layout for screenshots
@@ -34,6 +37,7 @@ func NewDuplicatesListRow() *DuplicatesListRow {
 		statsContainer:      container.NewVBox(), // Use VBox for compact vertical alignment
 		codecsLabel:         widget.NewLabel(""),
 		linksContainer:      container.NewVBox(), // Use VBox for compact vertical alignment
+		onTapped:            onTapped,
 	}
 
 	// Grid layout with 5 columns for consistent alignment
@@ -47,6 +51,21 @@ func NewDuplicatesListRow() *DuplicatesListRow {
 
 	row.ExtendBaseWidget(row)
 	return row
+}
+
+func (r *DuplicatesListRow) Tapped(_ *fyne.PointEvent) {
+	if r.isHeader {
+		// Ignore taps on header rows
+		return
+	}
+
+	r.selected = !r.selected
+	r.Refresh()
+
+	// Notify parent
+	if r.onTapped != nil {
+		r.onTapped(r.itemID, r.selected)
+	}
 }
 
 func (r *DuplicatesListRow) CreateRenderer() fyne.WidgetRenderer {
