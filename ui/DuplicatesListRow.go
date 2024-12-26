@@ -11,10 +11,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// DuplicatesListRow represents a single row in the DuplicatesList. It can be:
-//  1. The columns header row (shown once, if any videos exist)
-//  2. A group header row
-//  3. A video row
+// DuplicatesListRow represents a single row in the DuplicatesList.
 type DuplicatesListRow struct {
 	widget.BaseWidget
 
@@ -49,86 +46,118 @@ func NewDuplicatesListRow(onTapped func(itemID int, selected bool)) *DuplicatesL
 	}
 
 	//---------------------------------------------------------------------
-	// Columns header (aligned with columns below)
+	// 1) Columns header row
 	//---------------------------------------------------------------------
-	headerLabel1 := widget.NewLabel("Screenshots")
-	headerLabel2 := widget.NewLabel("Path")
-	headerLabel3 := widget.NewLabel("Stats")
-	headerLabel4 := widget.NewLabel("Codecs")
-	headerLabel5 := widget.NewLabel("Links")
+	headerLabel1 := newCenteredTruncatedLabel("Screenshots")
+	headerLabel2 := newCenteredTruncatedLabel("Path")
+	headerLabel3 := newCenteredTruncatedLabel("Stats")
+	headerLabel4 := newCenteredTruncatedLabel("Codecs")
+	headerLabel5 := newCenteredTruncatedLabel("Links")
 
-	// Set text alignment for headers
-	headerLabel1.Alignment = fyne.TextAlignLeading
-	headerLabel2.Alignment = fyne.TextAlignLeading
-	headerLabel3.Alignment = fyne.TextAlignLeading
-	headerLabel4.Alignment = fyne.TextAlignLeading
-	headerLabel5.Alignment = fyne.TextAlignLeading
+	// Each header column uses grid-wrap with these widths & uniform height:
+	col1Header := wrapWithBorder(
+		container.New(layout.NewGridWrapLayout(fyne.NewSize(532, 40)), headerLabel1),
+		color.RGBA{255, 0, 0, 255}, // Red border for debugging
+	)
+	col2Header := wrapWithBorder(
+		container.New(layout.NewGridWrapLayout(fyne.NewSize(200, 40)), headerLabel2),
+		color.RGBA{0, 255, 0, 255}, // Green border for debugging
+	)
+	col3Header := wrapWithBorder(
+		container.New(layout.NewGridWrapLayout(fyne.NewSize(120, 40)), headerLabel3),
+		color.RGBA{0, 0, 255, 255}, // Blue border for debugging
+	)
+	col4Header := wrapWithBorder(
+		container.New(layout.NewGridWrapLayout(fyne.NewSize(100, 40)), headerLabel4),
+		color.RGBA{255, 255, 0, 255}, // Yellow border for debugging
+	)
+	col5Header := wrapWithBorder(
+		container.New(layout.NewGridWrapLayout(fyne.NewSize(120, 40)), headerLabel5),
+		color.RGBA{255, 0, 255, 255}, // Magenta border for debugging
+	)
 
-	row.columnsHeaderContainer = container.NewHBox(
-		leftAligned(headerLabel1, 532),
-		leftAligned(headerLabel2, 200),
-		leftAligned(headerLabel3, 120),
-		leftAligned(headerLabel4, 100),
-		leftAligned(headerLabel5, 120),
+	row.columnsHeaderContainer = wrapWithBorder(
+		container.NewHBox(col1Header, col2Header, col3Header, col4Header, col5Header),
+		color.RGBA{128, 128, 128, 255}, // Gray border for entire header row
 	)
 
 	//---------------------------------------------------------------------
-	// Group header (centered horizontally & vertically)
+	// 2) Group header row
 	//---------------------------------------------------------------------
 	row.groupHeaderLabel = widget.NewLabel("")
 	row.groupHeaderLabel.Alignment = fyne.TextAlignCenter
-	groupHeader := centerBoth(row.groupHeaderLabel)
-	row.groupHeaderContainer = container.NewVBox(groupHeader)
+	row.groupHeaderLabel.Wrapping = fyne.TextWrap(fyne.TextTruncateClip)
+
+	groupCol := wrapWithBorder(
+		container.New(layout.NewGridWrapLayout(fyne.NewSize(1024, 40)), row.groupHeaderLabel),
+		color.RGBA{128, 128, 128, 255}, // Gray border for debugging
+	)
+	row.groupHeaderContainer = wrapWithBorder(container.NewStack(groupCol), color.RGBA{200, 200, 200, 255})
 
 	//---------------------------------------------------------------------
-	// Video row
+	// 3) Video row
 	//---------------------------------------------------------------------
-	row.screenshotContainer = container.NewWithoutLayout()
-	row.pathLabel = widget.NewLabel("")
-	row.statsLabel = widget.NewLabel("")
-	row.codecsLabel = widget.NewLabel("")
-	row.linksLabel = widget.NewLabel("")
+	row.screenshotContainer = wrapWithBorder(container.NewCenter(container.NewHBox()), color.RGBA{0, 255, 255, 255}) // Cyan border for debugging
 
-	// For each column, align content to the left and center vertically
-	col1 := leftAligned(row.screenshotContainer, 532)
-	col2 := leftAligned(row.pathLabel, 200)
-	col3 := leftAligned(row.statsLabel, 120)
-	col4 := leftAligned(row.codecsLabel, 100)
-	col5 := leftAligned(row.linksLabel, 120)
+	row.pathLabel = newCenteredTruncatedLabel("")
+	row.statsLabel = newCenteredTruncatedLabel("")
+	row.codecsLabel = newCenteredTruncatedLabel("")
+	row.linksLabel = newCenteredTruncatedLabel("")
 
-	row.videoLayout = container.NewHBox(col1, col2, col3, col4, col5)
+	col1 := wrapWithBorder(
+		container.New(layout.NewGridWrapLayout(fyne.NewSize(532, 120)), row.screenshotContainer),
+		color.RGBA{255, 165, 0, 255}, // Orange border for debugging
+	)
+	col2 := wrapWithBorder(
+		container.New(layout.NewGridWrapLayout(fyne.NewSize(200, 120)), newLeftAlignedContainer(row.pathLabel)),
+		color.RGBA{0, 128, 128, 255}, // Teal border for debugging
+	)
+	col3 := wrapWithBorder(
+		container.New(layout.NewGridWrapLayout(fyne.NewSize(120, 120)), newLeftAlignedContainer(row.statsLabel)),
+		color.RGBA{75, 0, 130, 255}, // Indigo border for debugging
+	)
+	col4 := wrapWithBorder(
+		container.New(layout.NewGridWrapLayout(fyne.NewSize(100, 120)), newLeftAlignedContainer(row.codecsLabel)),
+		color.RGBA{240, 230, 140, 255}, // Khaki border for debugging
+	)
+	col5 := wrapWithBorder(
+		container.New(layout.NewGridWrapLayout(fyne.NewSize(120, 120)), newLeftAlignedContainer(row.linksLabel)),
+		color.RGBA{255, 20, 147, 255}, // Pink border for debugging
+	)
+
+	row.videoLayout = wrapWithBorder(container.NewHBox(col1, col2, col3, col4, col5), color.RGBA{0, 0, 0, 255})
 
 	row.ExtendBaseWidget(row)
 	return row
 }
 
-// centerBoth returns a container that centers an object both vertically and horizontally.
-func centerBoth(obj fyne.CanvasObject) fyne.CanvasObject {
-	return container.New(layout.NewCenterLayout(), obj)
+// newCenteredTruncatedLabel returns a label with the given text, center-aligned and truncated
+func newCenteredTruncatedLabel(text string) *widget.Label {
+	lbl := widget.NewLabel(text)
+	lbl.Alignment = fyne.TextAlignCenter
+	lbl.Wrapping = fyne.TextWrap(fyne.TextTruncateClip)
+	return lbl
 }
 
-// leftAligned aligns an object vertically to the center and horizontally to the left.
-func leftAligned(obj fyne.CanvasObject, width float32) fyne.CanvasObject {
-	// Ensure text or object alignment is leading (left)
-	if label, ok := obj.(*widget.Label); ok {
-		label.Alignment = fyne.TextAlignLeading
-	}
+// Helper function to create a left-aligned, vertically centered container
+func newLeftAlignedContainer(obj fyne.CanvasObject) *fyne.Container {
+	return container.NewVBox(layout.NewSpacer(), obj, layout.NewSpacer())
+}
 
-	// Use a VBox layout to center the object vertically
-	return container.New(layout.NewVBoxLayout(),
-		container.New(layout.NewGridWrapLayout(fyne.NewSize(width, 40)), obj),
-	)
+// Helper function to wrap a container with a border
+func wrapWithBorder(obj fyne.CanvasObject, borderColor color.Color) *fyne.Container {
+	border := canvas.NewRectangle(borderColor)
+	border.StrokeColor = borderColor
+	border.StrokeWidth = 2
+	return container.NewBorder(border, border, border, border, obj)
 }
 
 func (r *DuplicatesListRow) Tapped(_ *fyne.PointEvent) {
-	// If it's the columns header or a group header, do nothing
 	if r.isColumnsHeader || r.isGroupHeader {
 		return
 	}
-
 	r.selected = !r.selected
 	r.Refresh()
-
 	if r.onTapped != nil {
 		r.onTapped(r.itemID, r.selected)
 	}
@@ -137,10 +166,6 @@ func (r *DuplicatesListRow) Tapped(_ *fyne.PointEvent) {
 func (r *DuplicatesListRow) CreateRenderer() fyne.WidgetRenderer {
 	bg := canvas.NewRectangle(r.backgroundColor())
 
-	// We stack 3 possible containers:
-	// 1) columnsHeaderContainer
-	// 2) groupHeaderContainer
-	// 3) videoLayout
 	overlay := container.NewWithoutLayout(bg)
 	overlay.Add(r.columnsHeaderContainer)
 	overlay.Add(r.groupHeaderContainer)
@@ -153,38 +178,29 @@ func (r *DuplicatesListRow) CreateRenderer() fyne.WidgetRenderer {
 	}
 }
 
-// backgroundColor returns a highlight color if selected, else transparent.
 func (r *DuplicatesListRow) backgroundColor() color.Color {
 	if r.selected {
-		// Use a gentle highlight color
 		return color.RGBA{R: 173, G: 216, B: 230, A: 128}
 	}
 	return color.RGBA{0, 0, 0, 0}
 }
 
-// Update configures this row as either a columns header, group header, or video row.
 func (r *DuplicatesListRow) Update(item duplicateListItem) {
 	r.isColumnsHeader = item.IsColumnsHeader
 	r.isGroupHeader = item.IsGroupHeader
 	r.selected = item.Selected
 
-	// Hide everything initially
 	r.columnsHeaderContainer.Hide()
 	r.groupHeaderContainer.Hide()
 	r.videoLayout.Hide()
 
 	switch {
 	case r.isColumnsHeader:
-		// Show the columns header row
 		r.columnsHeaderContainer.Show()
-
 	case r.isGroupHeader:
-		// Show the group header
 		r.groupHeaderLabel.SetText(item.HeaderText)
 		r.groupHeaderContainer.Show()
-
 	default:
-		// Normal video row
 		r.videoLayout.Show()
 		r.updateVideoRow(item)
 	}
@@ -199,54 +215,44 @@ func (r *DuplicatesListRow) updateVideoRow(item duplicateListItem) {
 		return
 	}
 
-	//---------------------------------------------------------------------
-	// Screenshots: place them horizontally side-by-side, no margin
-	//---------------------------------------------------------------------
 	r.screenshotContainer.Objects = nil
-	var xPos float32
+
+	// Create a grid layout for the screenshots
+	cols := 4 // Adjust the number of columns based on your requirement
+
+	grid := container.NewGridWithColumns(cols)
 	for _, img := range vd.Screenshot.Screenshots {
 		fImg := canvas.NewImageFromImage(img)
 		fImg.FillMode = canvas.ImageFillContain
-		fImg.SetMinSize(fyne.NewSize(100, 100))
-
-		fImg.Move(fyne.NewPos(xPos, 0))
-		xPos += fImg.MinSize().Width
-
-		r.screenshotContainer.Add(fImg)
+		fImg.SetMinSize(fyne.NewSize(100, 100)) // Ensure uniform size
+		grid.Add(fImg)
 	}
-	r.screenshotContainer.Resize(fyne.NewSize(xPos, 100))
 
-	// Path
+	// Center the grid within the screenshot container
+	r.screenshotContainer.Objects = []fyne.CanvasObject{
+		container.NewCenter(grid),
+	}
+	r.screenshotContainer.Refresh()
+
+	// Update the other video details
 	r.pathLabel.SetText(vd.Video.Path)
-	r.pathLabel.Alignment = fyne.TextAlignLeading
-
-	// Stats
-	statsString := fmt.Sprintf("%.2f MB\n%.2f Mbps\n%.2f fps\n%dx%d\n%02d:%02d:%02d",
+	statsString := fmt.Sprintf("%.2f MB | %.2f Mbps | %.2f fps | %dx%d | %02d:%02d:%02d",
 		float64(vd.Video.Size)/(1024.0*1024.0),
 		(float64(vd.Video.BitRate)/1024.0/1024.0)*8.0,
 		vd.Video.FrameRate,
-		vd.Video.Width,
-		vd.Video.Height,
+		vd.Video.Width, vd.Video.Height,
 		int(vd.Video.Duration)/3600,
 		(int(vd.Video.Duration)%3600)/60,
 		int(vd.Video.Duration)%60,
 	)
 	r.statsLabel.SetText(statsString)
-	r.statsLabel.Alignment = fyne.TextAlignLeading
-
-	// Codecs
 	r.codecsLabel.SetText(fmt.Sprintf("%s / %s", vd.Video.AudioCodec, vd.Video.VideoCodec))
-	r.codecsLabel.Alignment = fyne.TextAlignLeading
-
-	// Links
-	linkString := fmt.Sprintf("Symbolic? %t\nLink: %q\nHard? %t\nCount: %d",
+	linkString := fmt.Sprintf("Symbolic? %t | Hard? %t | Count: %d",
 		vd.Video.IsSymbolicLink,
-		vd.Video.SymbolicLink,
 		vd.Video.IsHardLink,
 		vd.Video.NumHardLinks-1,
 	)
 	r.linksLabel.SetText(linkString)
-	r.linksLabel.Alignment = fyne.TextAlignLeading
 }
 
 type duplicatesListRowRenderer struct {
@@ -255,38 +261,45 @@ type duplicatesListRowRenderer struct {
 	container  *fyne.Container
 }
 
+// Destroy handles cleanup for the renderer.
 func (r *duplicatesListRowRenderer) Destroy() {}
 
+// Layout arranges the objects within the renderer.
 func (r *duplicatesListRowRenderer) Layout(size fyne.Size) {
 	r.background.Resize(size)
 
-	// Ensure the columns header, group header, and video layout are constrained
+	// Columns header row (if used)
 	if r.row.isColumnsHeader {
-		r.row.columnsHeaderContainer.Resize(fyne.NewSize(size.Width, 40)) // Height for header row
+		r.row.columnsHeaderContainer.Resize(fyne.NewSize(size.Width, 40))
 		r.row.columnsHeaderContainer.Move(fyne.NewPos(0, 0))
 	}
 
+	// Group header row (if used)
 	if r.row.isGroupHeader {
-		r.row.groupHeaderContainer.Resize(fyne.NewSize(size.Width, 40)) // Adjust height if needed
+		r.row.groupHeaderContainer.Resize(fyne.NewSize(size.Width, 40))
 		r.row.groupHeaderContainer.Move(fyne.NewPos(0, 0))
 	}
 
+	// Video row (if used)
 	if !r.row.isColumnsHeader && !r.row.isGroupHeader {
-		r.row.videoLayout.Resize(size) // Ensure video layout fits the row size
+		r.row.videoLayout.Resize(size)
 		r.row.videoLayout.Move(fyne.NewPos(0, 0))
 	}
 
 	r.container.Resize(size)
 }
 
+// MinSize calculates the minimum size of the renderer.
 func (r *duplicatesListRowRenderer) MinSize() fyne.Size {
-	return fyne.NewSize(600, 120)
+	return fyne.NewSize(600, 148)
 }
 
+// Objects returns the objects to be drawn by the renderer.
 func (r *duplicatesListRowRenderer) Objects() []fyne.CanvasObject {
 	return []fyne.CanvasObject{r.background, r.container}
 }
 
+// Refresh updates the renderer with the current state.
 func (r *duplicatesListRowRenderer) Refresh() {
 	r.background.FillColor = r.row.backgroundColor()
 	r.background.Refresh()

@@ -46,7 +46,7 @@ func CreateUI(videoData [][]*models.VideoData) {
 	log.Println("Creating main application window")
 	window := a.NewWindow("govdupes")
 	window.SetContent(tabs)
-	window.Resize(fyne.NewSize(1024, 768))
+	window.Resize(fyne.NewSize(1024, 900))
 
 	log.Println("Showing application window")
 	window.ShowAndRun()
