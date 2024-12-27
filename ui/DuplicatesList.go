@@ -1,5 +1,6 @@
 package ui
 
+// DuplicatesList.go
 import (
 	"fmt"
 	"log"
@@ -16,11 +17,11 @@ import (
 //   - Group header row
 //   - Video row
 type duplicateListItem struct {
-	IsColumnsHeader bool // Only one instance at the top
+	IsColumnsHeader bool
 	IsGroupHeader   bool
 	GroupIndex      int
 
-	HeaderText string // used if IsGroupHeader == true
+	HeaderText string
 	VideoData  *models.VideoData
 	Selected   bool
 }
@@ -61,7 +62,7 @@ func NewDuplicatesList(videoData [][]*models.VideoData) *DuplicatesList {
 			dl.updateListRow(itemID, co)
 		},
 	)
-
+	log.Println("setting data")
 	dl.SetData(videoData)
 	return dl
 }
@@ -74,7 +75,6 @@ func NewDuplicatesList(videoData [][]*models.VideoData) *DuplicatesList {
 //     b) N video items
 func (dl *DuplicatesList) SetData(videoData [][]*models.VideoData) {
 	dl.mutex.Lock()
-	defer dl.mutex.Unlock()
 
 	dl.items = nil
 
@@ -86,6 +86,7 @@ func (dl *DuplicatesList) SetData(videoData [][]*models.VideoData) {
 			break
 		}
 	}
+
 	// Add the columns header row once if we have any videos
 	if hasAnyVideos {
 		dl.items = append(dl.items, duplicateListItem{
@@ -112,6 +113,10 @@ func (dl *DuplicatesList) SetData(videoData [][]*models.VideoData) {
 			})
 		}
 	}
+
+	// Refresh the list to apply new heights
+	dl.mutex.Unlock()
+	dl.list.Refresh()
 }
 
 // CreateRenderer is part of Fyne’s custom widget interface.
@@ -121,17 +126,19 @@ func (dl *DuplicatesList) CreateRenderer() fyne.WidgetRenderer {
 }
 
 func (dl *DuplicatesList) updateListRow(itemID widget.ListItemID, co fyne.CanvasObject) {
+	log.Println("Update list row")
 	dl.mutex.RLock()
-	defer dl.mutex.RUnlock()
 
 	if itemID < 0 || itemID >= len(dl.items) {
 		log.Printf("Item ID %d out of bounds", itemID)
+		dl.mutex.RUnlock()
 		return
 	}
 
 	row, ok := co.(*DuplicatesListRow)
 	if !ok {
 		log.Printf("Type assertion failed for itemID %d", itemID)
+		dl.mutex.RUnlock()
 		return
 	}
 
@@ -139,6 +146,9 @@ func (dl *DuplicatesList) updateListRow(itemID widget.ListItemID, co fyne.Canvas
 	row.itemID = itemID
 
 	// Unlock before calling row.Update() to avoid potential deadlock
+	log.Println("Done updating row")
+
+	dl.mutex.RUnlock()
 	row.Update(item)
 }
 
@@ -174,4 +184,3 @@ func (dl *DuplicatesList) handleRowTapped(itemID int, selected bool) {
 
 	dl.list.Refresh()
 }
-

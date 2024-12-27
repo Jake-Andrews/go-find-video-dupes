@@ -1,5 +1,7 @@
 package ui
 
+// ui.go
+
 import (
 	"image/color"
 	"log"
@@ -77,4 +79,3 @@ func (f *forcedVariant) Color(n fyne.ThemeColorName, _ fyne.ThemeVariant) color.
 	}
 	return f.Theme.Color(n, theme.VariantLight)
 }
-
