@@ -182,7 +182,7 @@ func (r *DuplicatesListRow) CreateRenderer() fyne.WidgetRenderer {
 
 	// Stack background at the bottom (Max layout), then place the actual content on top
 	// The content is a VBox of (possibly) columns header, group header, or video row
-	content := container.NewMax(
+	content := container.NewStack(
 		bg,
 		container.NewVBox(
 			r.columnsHeaderContainer,
