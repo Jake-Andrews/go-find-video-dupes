@@ -47,6 +47,7 @@ func SearchDirs(c *config.Config) []models.Video {
 // check if filename is in includestr, if so include consider the file
 // if both includeext/includestr agree then include the file
 func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string) []models.Video {
+	log.Printf("Root: %q", root)
 	videos := make([]models.Video, 0)
 	fileTracker := NewFileTracker()
 
@@ -68,6 +69,8 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string) []models.V
 				return nil
 			}
 
+			path = filepath.Join(root, path)
+
 			fileInfo, err := d.Info()
 			if err != nil {
 				log.Printf("Error getting the fs.DirEntry.Info(), err: %v\n", err)
@@ -78,15 +81,6 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string) []models.V
 			if err != nil {
 				log.Printf("Error trying to detect if file was a symbolic/hard link, path: %q", path)
 				return nil
-			}
-
-			if c.AbsPath {
-				// path, err = filepath.Abs(path)
-				path = filepath.Join(root, path)
-				//if err != nil {
-				//	log.Printf("Error creating absolute path, path: %q, err: %v\n", path, err)
-				//	return err
-				//}
 			}
 
 			if !checkValidVideo(path, fileInfo) {
@@ -113,7 +107,7 @@ func createVideo(path string, fileInfo os.FileInfo, fileID FileIdentity) models.
 		FileName:       fileInfo.Name(),
 		ModifiedAt:     fileInfo.ModTime(),
 		Size:           fileInfo.Size(),
-		NumHardLinks:   fileID.NumHardLinks, // identify
+		NumHardLinks:   fileID.NumHardLinks,
 		SymbolicLink:   fileID.SymbolicLink,
 		IsSymbolicLink: fileID.IsSymbolicLink,
 		IsHardLink:     fileID.IsHardLink,

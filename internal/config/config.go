@@ -61,7 +61,6 @@ func (c *Config) ParseArgs() {
 	flag.Var(&c.IgnoreExt, "ige", "Specify extension(s) to ignore (use multiple times for multiple ext). Default value is \"\".")
 	flag.Var(&c.IncludeExt, "ie", "Specify extension(s) to include (use multiple times for multiple ext). Default value is \"mp4,m4a\".")
 	c.SaveSC = *flag.Bool("sc", true, "Flag to save screenshots to folder T/F. Default value is \"False\".")
-	c.AbsPath = *flag.Bool("ap", true, "T/F. Default value is \"True\".")
 	c.FollowSymbolicLinks = *flag.Bool("fsl", true, "T/F. Default value is \"False\".")
 
 	flag.Parse()
@@ -73,6 +72,20 @@ func (c *Config) ParseArgs() {
 	log.Println("Ignore File Extensions:", c.IgnoreExt.Values)
 	log.Println("Include File Extensions:", c.IncludeExt.Values)
 	log.Println("Screenshot flag:", c.SaveSC)
-	log.Println("AbsPath flag:", c.AbsPath)
 	log.Println("FollowSymbolicLinks:", c.FollowSymbolicLinks)
 }
+
+/*
+func createStartingDirs(c *Config) {
+	wd, err := os.Getwd()
+	if err != nil {
+		log.Fatalf("error getting working directory, error: %v", err)
+	}
+
+	for _, d := range c.StartingDirs.Values {
+		if strings.Contains(d, ".") {
+            d = wd :
+		}
+	}
+}
+*/
