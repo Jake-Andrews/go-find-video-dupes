@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"image"
 	"log"
+	"reflect"
 	"strings"
 
 	"govdupes/internal/models"
@@ -79,6 +80,8 @@ func (r *videoRepo) GetDuplicateVideoData(ctx context.Context) ([][]*models.Vide
 		// Attach the corresponding video
 		if video, exists := videoMap[vh.FKVideohashVideo]; exists {
 			videoData.Video = *video
+			videoData.Video.SampleRateAvg = video.SampleRateAvg // Attach SampleRateAvg
+			videoData.Video.AvgFrameRate = video.AvgFrameRate   // Attach AvgFrameRate
 		}
 
 		// Attach the corresponding screenshots
@@ -211,23 +214,21 @@ func (r *videoRepo) CreateVideo(ctx context.Context, video *models.Video, hash *
 		}
 	}()
 
-	// Insert video
-	result, err := tx.ExecContext(ctx, `
-		INSERT INTO video (
-			path, fileName, createdAt, modifiedAt, frameRate, videoCodec, 
-			audioCodec, width, height, duration, size, bitRate, 
-			numHardLinks, symbolicLink, isSymbolicLink, isHardLink, inode, device
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-	`, video.Path, video.FileName, video.CreatedAt, video.ModifiedAt,
-		video.FrameRate, video.VideoCodec, video.AudioCodec, video.Width,
-		video.Height, video.Duration, video.Size, video.BitRate,
-		video.NumHardLinks, video.SymbolicLink, video.IsSymbolicLink,
-		video.IsHardLink, video.Inode, video.Device,
+	cols, placeholders, vals, err := buildInsertQueryAndValues(video)
+	if err != nil {
+		return fmt.Errorf("build insert data for video: %w", err)
+	}
+
+	insertVideoQuery := fmt.Sprintf(
+		`INSERT INTO video (%s) VALUES (%s);`,
+		strings.Join(cols, ", "),
+		strings.Join(placeholders, ", "),
 	)
+
+	result, err := tx.ExecContext(ctx, insertVideoQuery, vals...)
 	if err != nil {
 		return fmt.Errorf("insert video: %w", err)
 	}
-
 	videoID, err := result.LastInsertId()
 	if err != nil {
 		return fmt.Errorf("retrieve video ID: %w", err)
@@ -255,7 +256,7 @@ func (r *videoRepo) CreateVideo(ctx context.Context, video *models.Video, hash *
 	// Insert screenshots
 	base64Images, err := sc.EncodeImages()
 	if err != nil {
-		return fmt.Errorf("Error encoding images to base64, err: %v", err)
+		return fmt.Errorf("error encoding images to base64, err: %v", err)
 	}
 	jsonImages, err := json.Marshal(base64Images)
 	if err != nil {
@@ -399,12 +400,10 @@ func (r *videoRepo) getVideosByIDs(ctx context.Context, videoIDs []int64) ([]*mo
 	placeholders = placeholders[:len(placeholders)-1]
 
 	query := fmt.Sprintf(`
-        SELECT id, path, fileName, createdAt, modifiedAt, frameRate, videoCodec, 
-               audioCodec, width, height, duration, size, bitRate, numHardLinks, 
-               symbolicLink, isSymbolicLink, isHardLink, inode, device
-        FROM video
-        WHERE id IN (%s);
-    `, placeholders)
+	SELECT *
+	FROM video
+	WHERE id IN (%s);
+`, placeholders)
 
 	var videos []*models.Video
 	err := sqlscan.Select(ctx, r.db, &videos, query, utils.ToInterfaceSlice(videoIDs)...)
@@ -507,4 +506,50 @@ func int64ToInterfaceSlice(ids []int64) []interface{} {
 		result[i] = id
 	}
 	return result
+}
+
+// buildInsertQueryAndValues generates an INSERT query for a given tableName
+// and a struct v that has `db:"someColumn"` tags. It returns the full INSERT query
+// (without the "INSERT INTO tableName" part) as well as the values in the correct order.
+func buildInsertQueryAndValues(v interface{}) ([]string, []string, []interface{}, error) {
+	rv := reflect.ValueOf(v)
+	if rv.Kind() == reflect.Pointer {
+		rv = rv.Elem()
+	}
+	if rv.Kind() != reflect.Struct {
+		return nil, nil, nil, fmt.Errorf("expected a struct, got %T", v)
+	}
+
+	columns := make([]string, 0)
+	placeholders := make([]string, 0)
+	values := make([]interface{}, 0)
+
+	rt := rv.Type()
+	for i := 0; i < rv.NumField(); i++ {
+		fieldType := rt.Field(i)
+
+		// 1) Retrieve the db tag
+		dbTag := fieldType.Tag.Get("db")
+
+		// 2) Skip empty db tag fields (or untagged fields)
+		if dbTag == "" {
+			continue
+		}
+
+		// 3) Skip the ID column if it's auto-increment in the DB
+		//    e.g., if `dbTag == "id"`, or any other logic to detect PK
+		if dbTag == "id" {
+			continue
+		}
+
+		// Add column name
+		columns = append(columns, dbTag)
+		// Add placeholder
+		placeholders = append(placeholders, "?")
+		// Field value
+		fieldVal := rv.Field(i).Interface()
+		values = append(values, fieldVal)
+	}
+
+	return columns, placeholders, values, nil
 }

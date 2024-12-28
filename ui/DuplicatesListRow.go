@@ -292,8 +292,8 @@ func (r *DuplicatesListRow) updateVideoRow(item duplicateListItem) {
 	statsObjects := []fyne.CanvasObject{
 		layout.NewSpacer(),
 		newLeftAlignedCanvasText(formatFileSize(vd.Video.Size), color.White),
-		newLeftAlignedCanvasText(fmt.Sprintf("%.2f Mbps", float64(vd.Video.BitRate)/1_000_000.0), color.White),
-		newLeftAlignedCanvasText(fmt.Sprintf("%.2f fps", vd.Video.FrameRate), color.White),
+		newLeftAlignedCanvasText(fmt.Sprintf("%.2f Mbps", float64(vd.Video.BitRate)/1_048_576.0), color.White),
+		newLeftAlignedCanvasText(fmt.Sprintf("%.2f fps", vd.Video.AvgFrameRate), color.White),
 		newLeftAlignedCanvasText(fmt.Sprintf("%dx%d", vd.Video.Width, vd.Video.Height), color.White),
 		newLeftAlignedCanvasText(formatDuration(vd.Video.Duration), color.White),
 		layout.NewSpacer(),
@@ -308,10 +308,10 @@ func (r *DuplicatesListRow) updateVideoRow(item duplicateListItem) {
 	// 5) Links column
 	linksObjects := []fyne.CanvasObject{
 		layout.NewSpacer(),
-		newLeftAlignedCanvasText(fmt.Sprintf("IsSymbolicLink: %t", vd.Video.IsSymbolicLink), color.White),
-		newLeftAlignedCanvasText(fmt.Sprintf("SymbolicLink: %s", vd.Video.SymbolicLink), color.White),
-		newLeftAlignedCanvasText(fmt.Sprintf("IsHardLink: %t", vd.Video.IsHardLink), color.White),
-		newLeftAlignedCanvasText(fmt.Sprintf("NumHardLinks: %d", vd.Video.NumHardLinks), color.White),
+		newLeftAlignedCanvasText(fmt.Sprintf("Symbolic: %t", vd.Video.IsSymbolicLink), color.White),
+		newLeftAlignedCanvasText(fmt.Sprintf("Symbolic: %q", vd.Video.SymbolicLink), color.White),
+		newLeftAlignedCanvasText(fmt.Sprintf("Hard: %t", vd.Video.IsHardLink), color.White),
+		newLeftAlignedCanvasText(fmt.Sprintf("#Hard: %d", vd.Video.NumHardLinks), color.White),
 		layout.NewSpacer(),
 	}
 	r.linksLabel.Objects = linksObjects

@@ -3,14 +3,17 @@ package ffprobe
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os/exec"
 	"strconv"
+	"strings"
 
 	"govdupes/internal/models"
 )
 
+/*
 var validVideoCodecs = map[string]bool{
 	"h264": true, "hevc": true, "mpeg4": true, "vp8": true, "vp9": true,
 	"av1": true, "theora": true, "mpeg2video": true, "vc1": true, "wmv3": true,
@@ -25,13 +28,16 @@ var validAudioCodecs = map[string]bool{
 	"wavpack": true, "speex": true, "wma": true, "dts": true, "truehd": true,
 	"aptx": true, "g722": true, "g729": true,
 }
+*/
 
 type FFProbeOutput struct {
 	Streams []struct {
-		CodecType string `json:"codec_type"`
-		CodecName string `json:"codec_name"`
-		Width     int    `json:"width,omitempty"`
-		Height    int    `json:"height,omitempty"`
+		CodecType     string          `json:"codec_type"`
+		CodecName     string          `json:"codec_name"`
+		Width         int             `json:"width"`
+		Height        int             `json:"height"`
+		SampleRateAvg int             `json:"sample_rate_avg"`
+		AvgFrameRate  FractionFloat32 `json:"avg_frame_rate"`
 	} `json:"streams"`
 	Format struct {
 		Duration string `json:"duration"`
@@ -40,12 +46,55 @@ type FFProbeOutput struct {
 	} `json:"format"`
 }
 
+// Custom type for parsing the fraction
+type FractionFloat32 float32
+
+// UnmarshalJSON implementation for FractionFloat64
+// avg_frame_rate format: #/#
+// ex: 30/1
+// avg_frame_rate format: #/# or 0/0
+func (f *FractionFloat32) UnmarshalJSON(data []byte) error {
+	// Trim the quotes around the string (if any)
+	raw := strings.Trim(string(data), `"`)
+
+	// Split the string by the slash
+	parts := strings.Split(raw, "/")
+	if len(parts) != 2 {
+		return errors.New("invalid fraction format")
+	}
+
+	// Parse numerator and denominator
+	numerator, err := strconv.ParseFloat(parts[0], 64)
+	if err != nil {
+		return fmt.Errorf("invalid numerator: %v", err)
+	}
+	denominator, err := strconv.ParseFloat(parts[1], 64)
+	if err != nil {
+		return fmt.Errorf("invalid denominator: %v", err)
+	}
+
+	// Handle edge case for 0/0
+	if numerator == 0 && denominator == 0 {
+		*f = 0 // Default value for undefined fraction
+		return nil
+	}
+
+	// Check for division by zero
+	if denominator == 0 {
+		return errors.New("division by zero")
+	}
+
+	// Calculate the float64 value
+	*f = FractionFloat32(numerator / denominator)
+	return nil
+}
+
 func GetVideoInfo(v *models.Video) error {
 	log.Printf("Getting info from Video, videoname: %q\n", v.FileName)
 	cmd := exec.Command("ffprobe",
 		"-v", "error",
 		"-show_entries", "format=duration,size,bit_rate",
-		"-show_entries", "stream=codec_type,codec_name,width,height",
+		"-show_entries", "stream=codec_type,codec_name,width,height,sample_rate,avg_frame_rate",
 		"-of", "json",
 		v.Path)
 
@@ -75,31 +124,27 @@ func setVideo(f *FFProbeOutput, v *models.Video) error {
 	for _, stream := range f.Streams {
 		switch stream.CodecType {
 		case "video":
-			if !validVideoCodecs[stream.CodecName] {
-				return fmt.Errorf("Invalid video codec: %q", stream.CodecName)
-			}
 			if stream.Width <= 0 || stream.Height <= 0 {
-				return fmt.Errorf("Invalid video dimensions: width=%d, height=%d", stream.Width, stream.Height)
+				return fmt.Errorf("invalid video dimensions: width=%d, height=%d", stream.Width, stream.Height)
 			}
 			v.VideoCodec = stream.CodecName
 			v.Width = stream.Width
 			v.Height = stream.Height
+			v.AvgFrameRate = float32(stream.AvgFrameRate)
 		case "audio":
-			if !validAudioCodecs[stream.CodecName] {
-				return fmt.Errorf("Invalid audio codec: %q", stream.CodecName)
-			}
 			v.AudioCodec = stream.CodecName
+			v.SampleRateAvg = stream.SampleRateAvg
 		default:
-			return fmt.Errorf("Unknown codec detected: %q\n", stream.CodecName)
+			return fmt.Errorf("unknown codec detected: %q", stream.CodecName)
 		}
 	}
 
 	size, err := strconv.Atoi(f.Format.Size)
 	if err != nil {
-		return fmt.Errorf("Error converting size to int, filename: %q, size: %q", v.FileName, size)
+		return fmt.Errorf("error converting size to int, filename: %q, size: %q", v.FileName, size)
 	}
 	if size <= 0 {
-		return fmt.Errorf("Invalid size for, filename: %q, size: %d", v.FileName, size)
+		return fmt.Errorf("invalid size for, filename: %q, size: %d", v.FileName, size)
 	}
 	v.Size = int64(size)
 
@@ -111,11 +156,10 @@ func setVideo(f *FFProbeOutput, v *models.Video) error {
 
 	dur, err := strconv.ParseFloat(f.Format.Duration, 64)
 	if err != nil {
-		log.Printf("Error, parsing duration\n")
-		return err
+		return fmt.Errorf("error parsing duration, error: %v", err)
 	}
 	if dur <= 0 {
-		return fmt.Errorf("Invalid time.Duration from ffprobe, filename: %q, duration: %v", v.FileName, dur)
+		return fmt.Errorf("invalid time.Duration from ffprobe, filename: %q, duration: %v", v.FileName, dur)
 	}
 	v.Duration = float32(dur)
 
@@ -123,6 +167,7 @@ func setVideo(f *FFProbeOutput, v *models.Video) error {
 }
 
 func (f *FFProbeOutput) print() {
+	log.Println("ffprobe:")
 	log.Printf("Duration: %s seconds\n", f.Format.Duration)
 	log.Printf("Size: %q bytes\n", f.Format.Size)
 	log.Printf("Bitrate: %q bps\n", f.Format.BitRate)
@@ -130,10 +175,10 @@ func (f *FFProbeOutput) print() {
 	for _, stream := range f.Streams {
 		switch stream.CodecType {
 		case "video":
-			log.Printf("Video Codec: %s, Resolution: %dx%d\n",
-				stream.CodecName, stream.Width, stream.Height)
+			log.Printf("Video Codec: %s, Resolution: %dx%d, AvgFrameRate: %.2f",
+				stream.CodecName, stream.Width, stream.Height, stream.AvgFrameRate)
 		case "audio":
-			log.Printf("Audio Codec: %s\n", stream.CodecName)
+			log.Printf("Audio Codec: %s, SampleRateAvg: %d", stream.CodecName, stream.SampleRateAvg)
 		default:
 			log.Printf("Unknown codec detected: %q\n", stream.CodecName)
 		}

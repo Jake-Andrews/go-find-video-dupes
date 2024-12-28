@@ -11,7 +11,7 @@ import (
 
 type Screenshots struct {
 	ID                    int64         `db:"id" json:"id"`
-	Screenshots           []image.Image `json:"-"`
+	Screenshots           []image.Image `db:"screenshots" json:"-"`
 	FKScreenshotVideohash int64         `db:"FK_screenshot_videohash" json:"FK_screenshot_videohash"`
 }
 

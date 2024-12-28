@@ -32,7 +32,6 @@ func InitDB(dbPath string) *sql.DB {
 			fileName TEXT NOT NULL,
 			createdAt DATETIME,
 			modifiedAt DATETIME,
-			frameRate REAL,
 			videoCodec TEXT,
 			audioCodec TEXT,
 			width INTEGER,
@@ -45,7 +44,9 @@ func InitDB(dbPath string) *sql.DB {
 			isSymbolicLink INTEGER,
 			isHardLink INTEGER,
 			inode INTEGER,
-			device INTEGER
+			device INTEGER,
+            sampleRateAvg INTEGER,
+            avgFrameRate REAL
 		);`,
 	)
 	if err != nil {
