@@ -94,17 +94,18 @@ func main() {
 	}
 
 	log.Println("Starting to match hashes")
-	hashDuplicates, err := duplicate.FindVideoDuplicates(fHashes)
+	dupeVideoIndexes, dupeVideos, err := duplicate.FindVideoDuplicates(fHashes)
 	if err != nil {
 		log.Fatalf("Error trying to determine duplicates, err: %v", err)
 	}
-	repo.BulkUpdateVideohashes(context.Background(), fHashes)
 
-	log.Println(hashDuplicates)
+	repo.BulkUpdateVideohashes(context.Background(), dupeVideos)
+
+	log.Println(dupeVideoIndexes)
 	log.Println("Printing duplicate video groups:")
-	for i := 0; i < len(hashDuplicates); i++ {
+	for i := 0; i < len(dupeVideoIndexes); i++ {
 		log.Printf("Video group #%d", i)
-		for _, k := range hashDuplicates[i] {
+		for _, k := range dupeVideoIndexes[i] {
 			j := k - 1 // sqlite3 primary key auto increment start at 1
 			log.Printf("Filename: %q, path: %q", fVideos[j].FileName, fVideos[j].Path)
 		}
@@ -118,7 +119,7 @@ func main() {
 	ui.CreateUI(duplicateVideoData)
 }
 
-// writeDuplicatesToJSON(hashDuplicates, fVideos, "dups.json")
+// writeDuplicatesToJSON(dupeVideoIndexes, fVideos, "dups.json")
 
 func videoExistsInDB(v []models.Video, dbVideos []*models.Video) []models.Video {
 	// map[filepath (string)]models.Video quickly check if video exists in DB
@@ -155,12 +156,12 @@ func identicalVideoChecker(v *models.Video, dbV *models.Video) bool {
 	return false
 }
 
-func writeDuplicatesToJSON(hashDuplicates [][]int, fVideos []*models.Video, outputPath string) error {
+func writeDuplicatesToJSON(dupeVideoIndexes [][]int, fVideos []*models.Video, outputPath string) error {
 	// Create a structure to hold duplicate groups
-	duplicateGroups := make([][]models.Video, len(hashDuplicates))
+	duplicateGroups := make([][]models.Video, len(dupeVideoIndexes))
 
 	// Populate the structure
-	for i, group := range hashDuplicates {
+	for i, group := range dupeVideoIndexes {
 		duplicateGroups[i] = make([]models.Video, len(group))
 		for j, index := range group {
 			if index < 1 || index > len(fVideos) {

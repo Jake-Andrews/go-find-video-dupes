@@ -13,7 +13,7 @@ type DuplicateOptions struct {
 	MaxHashDistance int
 }
 
-func FindVideoDuplicates(hashes []*models.Videohash) ([][]int, error) {
+func FindVideoDuplicates(hashes []*models.Videohash) ([][]int, []*models.Videohash, error) {
 	options := DuplicateOptions{MaxDurationDiff: 5, MaxHashDistance: 4}
 	initializeBuckets(hashes)
 
@@ -27,7 +27,10 @@ func FindVideoDuplicates(hashes []*models.Videohash) ([][]int, error) {
 		}
 	}
 
-	return collectBuckets(hashes), nil
+	buckets := collectBuckets(hashes)
+	duplicateHashes := collectDuplicateHashes(hashes)
+
+	return buckets, duplicateHashes, nil
 }
 
 func initializeBuckets(hashes []*models.Videohash) {
@@ -177,4 +180,25 @@ func calcHammingDistance(hashVal1 string, hashVal2 string) (int, error) {
 
 	log.Printf("Hamming distance between hashes: %d\n", distance)
 	return distance, nil
+}
+
+func collectDuplicateHashes(hashes []*models.Videohash) []*models.Videohash {
+	bucketMap := make(map[int][]*models.Videohash)
+
+	// Group videohashes by their bucket
+	for _, video := range hashes {
+		if video.Bucket != -1 {
+			bucketMap[video.Bucket] = append(bucketMap[video.Bucket], video)
+		}
+	}
+
+	var duplicates []*models.Videohash
+	for _, group := range bucketMap {
+		if len(group) > 1 { // Only include groups with more than one video
+			duplicates = append(duplicates, group...)
+		}
+	}
+
+	log.Printf("Collected duplicate videohashes: %v\n", duplicates)
+	return duplicates
 }
