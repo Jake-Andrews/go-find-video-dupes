@@ -61,11 +61,11 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string) []models.V
 			if d.IsDir() {
 				return nil
 			}
-
-			fileName := strings.ToLower(d.Name())
-			fileExt := strings.ToLower(filepath.Ext(path))
-			if len(fileExt) > 0 {
-				fileExt = fileExt[1:]
+			if !validExt(path, c) {
+				return nil
+			}
+			if !validFileName(d, c) {
+				return nil
 			}
 
 			fileInfo, err := d.Info()
@@ -77,28 +77,6 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string) []models.V
 			fileID, err := fileTracker.FindFileLinks(path, *c)
 			if err != nil {
 				log.Printf("Error trying to detect if file was a symbolic/hard link, path: %q", path)
-				return nil
-			}
-
-			for _, v := range c.IgnoreExt.Values {
-				v = strings.ToLower(v)
-				if strings.EqualFold(fileExt, v) {
-					// log.Printf("Ignoring file, name: %q, ignoreext: %q\n", fileName, c.IgnoreExt.Values)
-					return nil
-				}
-			}
-			for _, s := range c.IgnoreStr.Values {
-				s = strings.ToLower(s)
-				if strings.Contains(fileName, s) {
-					// log.Printf("Ignoring file ignorestr, name: %q, ignorestr: %q\n", fileName, c.IgnoreStr.Values)
-					return nil
-				}
-			}
-
-			if !checkIncludeExt(fileExt, c.IncludeExt.Values) {
-				return nil
-			}
-			if !checkIncludeStr(fileName, c.IncludeStr.Values) {
 				return nil
 			}
 
@@ -185,5 +163,62 @@ func checkValidVideo(path string, fileInfo os.FileInfo) bool {
 	if path == "" || fileInfo.Name() == "" || fileInfo.Size() <= 0 {
 		return false
 	}
+	return true
+}
+
+func validExt(path string, c *config.Config) bool {
+	// 1) Extract and normalize the file extension
+	fileExt := strings.ToLower(filepath.Ext(path))
+	if len(fileExt) > 0 {
+		fileExt = fileExt[1:]
+	}
+
+	// 2) Check if this extension is included
+	if len(c.IncludeExt.Values) > 0 {
+		included := false
+		for _, inc := range c.IncludeExt.Values {
+			if strings.EqualFold(fileExt, strings.ToLower(inc)) {
+				included = true
+				break
+			}
+		}
+		if !included {
+			return false
+		}
+	}
+
+	// 3) Check if this extension is ignored
+	for _, ig := range c.IgnoreExt.Values {
+		if strings.EqualFold(fileExt, strings.ToLower(ig)) {
+			return false
+		}
+	}
+	return true
+}
+
+func validFileName(d fs.DirEntry, c *config.Config) bool {
+	// 1) Convert file name to lowercase
+	fileName := strings.ToLower(d.Name())
+
+	// 2) Check if file name is ignored
+	for _, ig := range c.IgnoreStr.Values {
+		if strings.Contains(fileName, strings.ToLower(ig)) {
+			return false
+		}
+	}
+
+	// 3) Check if file name is included (if includes are provided)
+	if len(c.IncludeStr.Values) > 0 {
+		for _, inc := range c.IncludeStr.Values {
+			if strings.Contains(fileName, strings.ToLower(inc)) {
+				// Found an include match, so we can allow it
+				return true
+			}
+		}
+		// No includes matched -> not valid
+		return false
+	}
+
+	// If no include strings are specified, default to true
 	return true
 }
