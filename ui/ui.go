@@ -112,7 +112,57 @@ func sortVideosByResolution(videoData [][]*models.VideoData, ascending bool) {
 	}
 }
 
+func deleteVideosFromList(duplicatesList *DuplicatesList, videoData2d [][]*models.VideoData) {
+	duplicatesList.mutex.Lock()
+	defer duplicatesList.mutex.Unlock()
+
+	selectedIDs := make(map[int64]struct{})
+
+	for _, item := range duplicatesList.items {
+		if item.Selected && item.VideoData != nil {
+			selectedIDs[item.VideoData.Video.ID] = struct{}{}
+		}
+	}
+
+	for i := range videoData2d {
+		filteredRow := videoData2d[i][:0]
+		for _, videoData := range videoData2d[i] {
+			if _, found := selectedIDs[videoData.Video.ID]; !found {
+				filteredRow = append(filteredRow, videoData)
+			}
+		}
+		videoData2d[i] = filteredRow
+	}
+}
+
 func buildSortSelectTab(duplicatesList *DuplicatesList, videoData [][]*models.VideoData) fyne.CanvasObject {
+	deleteOptions := []string{"From list", "From list & DB", "From disk"}
+	deleteLabel := widget.NewLabel("Delete selected")
+	deleteDropdown := widget.NewSelect(deleteOptions, nil)
+	deleteDropdown.PlaceHolder = "Selection an option"
+
+	deleteButton := widget.NewButton("Delete", func() {
+		if deleteDropdown.Selected == "" {
+			log.Println("Nothing selected")
+			return
+		}
+
+		switch deleteDropdown.Selected {
+		case "From list":
+			deleteVideosFromList(duplicatesList, videoData)
+			log.Println("Delete from list")
+			//
+		case "From list & DB":
+			log.Println("Delete from list & DB")
+			//
+		case "From disk":
+			log.Println("Delete from disk")
+			//
+		}
+		// Refresh the duplicates list with the sorted data
+		duplicatesList.SetData(videoData)
+	})
+
 	sortOptions := []string{"Size", "Bitrate", "Resolution"}
 	sortLabel := widget.NewLabel("Sort")
 	dropdown := widget.NewSelect(sortOptions, nil) // Selected option will be handled on button press
@@ -160,6 +210,6 @@ func buildSortSelectTab(duplicatesList *DuplicatesList, videoData [][]*models.Vi
 	})
 
 	// Combine label, dropdown, and button into a vertical layout
-	content := container.NewVBox(sortLabel, dropdown, sortButton)
+	content := container.NewVBox(sortLabel, dropdown, sortButton, deleteLabel, deleteDropdown, deleteButton)
 	return content
 }

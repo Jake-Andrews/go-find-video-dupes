@@ -87,6 +87,22 @@ func (dl *DuplicatesList) SetData(videoData [][]*models.VideoData) {
 		}
 	}
 
+	// Removing groups with 0 or 1 videos in place
+	j := 0
+	for i := 0; i < len(videoData); i++ {
+		group := videoData[i]
+		if len(group) == 0 {
+			log.Printf("Error empty group encountered removing")
+			continue
+		} else if len(group) == 1 {
+			log.Printf("Encountered only 1 video in a group removing: %q", group[0].Video.Path)
+			continue
+		}
+		videoData[j] = videoData[i]
+		j++
+	}
+	videoData = videoData[:j]
+
 	// Add the columns header row once if we have any videos
 	if hasAnyVideos {
 		dl.items = append(dl.items, duplicateListItem{
