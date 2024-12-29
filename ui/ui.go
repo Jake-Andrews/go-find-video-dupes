@@ -1,5 +1,6 @@
 package ui
 
+// ui.go
 import (
 	"image/color"
 	"log"
@@ -30,12 +31,12 @@ func CreateUI(videoData [][]*models.VideoData) {
 
 	duplicatesTab := scroll
 	themeTab := buildThemeTab(a)
-	sortSelectTab := buildSortSelectTab(duplicatesListWidget, videoData)
+	sortSelectTab := buildSortSelectDeleteTab(duplicatesListWidget, videoData)
 
 	tabs := container.NewAppTabs(
 		container.NewTabItem("Duplicates", duplicatesTab),
 		container.NewTabItem("Theme", themeTab),
-		container.NewTabItem("Sort/Select", sortSelectTab),
+		container.NewTabItem("Sort/Select/Delete", sortSelectTab),
 	)
 	tabs.SetTabLocation(container.TabLocationTop)
 
@@ -135,7 +136,8 @@ func deleteVideosFromList(duplicatesList *DuplicatesList, videoData2d [][]*model
 	}
 }
 
-func buildSortSelectTab(duplicatesList *DuplicatesList, videoData [][]*models.VideoData) fyne.CanvasObject {
+func buildSortSelectDeleteTab(duplicatesList *DuplicatesList, videoData [][]*models.VideoData) fyne.CanvasObject {
+	// DELETE
 	deleteOptions := []string{"From list", "From list & DB", "From disk"}
 	deleteLabel := widget.NewLabel("Delete selected")
 	deleteDropdown := widget.NewSelect(deleteOptions, nil)
@@ -162,7 +164,9 @@ func buildSortSelectTab(duplicatesList *DuplicatesList, videoData [][]*models.Vi
 		// Refresh the duplicates list with the sorted data
 		duplicatesList.SetData(videoData)
 	})
+	// SELECT
 
+	// SORT
 	sortOptions := []string{"Size", "Bitrate", "Resolution"}
 	sortLabel := widget.NewLabel("Sort")
 	dropdown := widget.NewSelect(sortOptions, nil) // Selected option will be handled on button press

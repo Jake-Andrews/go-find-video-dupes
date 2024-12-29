@@ -1,5 +1,6 @@
 package ui
 
+// DuplicatesListRow.go
 import (
 	"fmt"
 	"image/color"
