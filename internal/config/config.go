@@ -1,8 +1,11 @@
 package config
 
 import (
+	"errors"
 	"flag"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -65,6 +68,9 @@ func (c *Config) ParseArgs() {
 
 	flag.Parse()
 
+	// get full path for startingdirs, ie: ./ or . to /path/path
+	validateStartingDirs(c)
+
 	log.Println("DatabasePath:", c.DatabasePath.Values)
 	log.Println("StartingDirs:", c.StartingDirs.Values)
 	log.Println("Ignore File Strings:", c.IgnoreStr.Values)
@@ -73,6 +79,37 @@ func (c *Config) ParseArgs() {
 	log.Println("Include File Extensions:", c.IncludeExt.Values)
 	log.Println("Screenshot flag:", c.SaveSC)
 	log.Println("FollowSymbolicLinks:", c.FollowSymbolicLinks)
+}
+
+// no return, exit if error
+// fix starting dir values .. . (relative paths fixed to absolute)
+func validateStartingDirs(c *Config) {
+	wd, err := os.Getwd()
+	if err != nil {
+		log.Fatalf("error getting wd, error: %v", err)
+	}
+	log.Println(wd)
+
+	for i, dir := range c.StartingDirs.Values {
+		f, err := os.Open(dir)
+		if err != nil {
+			log.Fatalf("error opening dir, dir: %q", dir)
+		}
+		log.Println(c.StartingDirs.Values[i])
+		c.StartingDirs.Values[i] = filepath.Join(wd, dir)
+		log.Println(filepath.Join(wd, dir))
+
+		// check if dir exists
+		fsInfo, err := f.Stat()
+		if errors.Is(err, os.ErrNotExist) {
+			log.Fatalf("error calling stat on dir: %q dir does not exist, err: %v", dir, err)
+		} else if err != nil {
+			log.Fatalf("error calling stat on dir, not a os.ErrNotExist error. dir %q, err: %v", dir, err)
+		}
+		if !fsInfo.IsDir() {
+			log.Fatalf("error dir: %q is not a valid directory", dir)
+		}
+	}
 }
 
 /*
