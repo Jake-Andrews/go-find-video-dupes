@@ -445,17 +445,15 @@ func buildSortSelectDeleteTab(duplicatesList *DuplicatesList, videoData [][]*mod
 		case "From list":
 			deleteVideosFromList(duplicatesList, videoData)
 			log.Println("Delete from list")
-			//
 		case "From list & DB":
 			log.Println("Delete from list & DB")
-			//
 		case "From disk":
 			log.Println("Delete from disk")
-			//
 		}
-		// Refresh the duplicates list with the sorted data
+
 		duplicatesList.SetData(videoData)
 	})
+
 	// SELECT
 	selectOptions := []string{"Select identical except path/name", "Select all but the largest", "Select all but the smallest", "Select all but the newest", "Select all but the oldest", "Select all but the highest bitrate"}
 	selectLabel := widget.NewLabel("Select")
@@ -463,7 +461,7 @@ func buildSortSelectDeleteTab(duplicatesList *DuplicatesList, videoData [][]*mod
 	selectDropdown.PlaceHolder = "Select an option"
 	selectButton := widget.NewButton("Select", func() {
 		if selectDropdown.Selected == "" {
-			return // Do nothing if no option is selected
+			return
 		}
 
 		switch selectDropdown.Selected {
@@ -483,37 +481,36 @@ func buildSortSelectDeleteTab(duplicatesList *DuplicatesList, videoData [][]*mod
 			selectAllButLowestBitrate(duplicatesList)
 		}
 
-		// Refresh the duplicates list with the sorted data
 		duplicatesList.Refresh()
 	})
 
 	// SORT
-	sortOptions := []string{"Size", "Bitrate", "Resolution"}
+	sortOptions := []string{"Size", "Bitrate", "Resolution", "Group Size", "Total Videos"}
 	sortLabel := widget.NewLabel("Sort")
-	dropdown := widget.NewSelect(sortOptions, nil) // Selected option will be handled on button press
+	dropdown := widget.NewSelect(sortOptions, nil)
 	dropdown.PlaceHolder = "Select an option"
 
-	// Track the sorting order for each criterion
 	sortOrder := map[string]bool{
-		"Size":       true, // true = ascending, false = descending
-		"Bitrate":    true,
-		"Resolution": true,
+		"Size":                true, // true = ascending, false = descending
+		"Bitrate":             true,
+		"Resolution":          true,
+		"(Group) Size":        true,
+		"(Group) Video Count": true,
 	}
 
-	// Sort button triggers the actual sorting
 	sortButton := widget.NewButton("Sort", func() {
 		if dropdown.Selected == "" {
-			return // Do nothing if no option is selected
+			return
 		}
 
 		switch dropdown.Selected {
 		case "Size":
 			if sortOrder["Size"] {
-				sortVideosBySize(videoData, true) // Ascending
+				sortVideosBySize(videoData, true)
 			} else {
-				sortVideosBySize(videoData, false) // Descending
+				sortVideosBySize(videoData, false)
 			}
-			sortOrder["Size"] = !sortOrder["Size"] // Toggle order
+			sortOrder["Size"] = !sortOrder["Size"]
 		case "Bitrate":
 			if sortOrder["Bitrate"] {
 				sortVideosByBitrate(videoData, true)
@@ -528,13 +525,47 @@ func buildSortSelectDeleteTab(duplicatesList *DuplicatesList, videoData [][]*mod
 				sortVideosByResolution(videoData, false)
 			}
 			sortOrder["Resolution"] = !sortOrder["Resolution"]
+		case "Group Size":
+			if sortOrder["(Group) Size"] {
+				sortVideosByGroupSize(videoData, true)
+			} else {
+				sortVideosByGroupSize(videoData, false)
+			}
+			sortOrder["(Group) Size"] = !sortOrder["(Group) Size"]
+		case "Total Videos":
+			if sortOrder["(Group) Video Count"] {
+				sortVideosByTotalVideos(videoData, true)
+			} else {
+				sortVideosByTotalVideos(videoData, false)
+			}
+			sortOrder["(Group) Video Count"] = !sortOrder["(Group) Video Count"]
 		}
 
-		// Refresh the duplicates list with the sorted data
 		duplicatesList.SetData(videoData)
 	})
 
-	// Combine label, dropdown, and button into a vertical layout
 	content := container.NewVBox(sortLabel, dropdown, sortButton, deleteLabel, deleteDropdown, deleteButton, selectLabel, selectDropdown, selectButton)
 	return content
+}
+
+func sortVideosByGroupSize(videoData [][]*models.VideoData, ascending bool) {
+	sort.SliceStable(videoData, func(i, j int) bool {
+		if ascending {
+			return len(videoData[i]) < len(videoData[j])
+		}
+		return len(videoData[i]) > len(videoData[j])
+	})
+}
+
+func sortVideosByTotalVideos(videoData [][]*models.VideoData, ascending bool) {
+	countVideos := func(group []*models.VideoData) int {
+		return len(group)
+	}
+
+	sort.SliceStable(videoData, func(i, j int) bool {
+		if ascending {
+			return countVideos(videoData[i]) < countVideos(videoData[j])
+		}
+		return countVideos(videoData[i]) > countVideos(videoData[j])
+	})
 }
