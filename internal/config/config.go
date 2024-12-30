@@ -83,6 +83,7 @@ func (c *Config) ParseArgs() {
 
 // no return, exit if error
 // fix starting dir values .. . (relative paths fixed to absolute)
+// clean paths
 func validateStartingDirs(c *Config) {
 	wd, err := os.Getwd()
 	if err != nil {
@@ -96,8 +97,12 @@ func validateStartingDirs(c *Config) {
 			log.Fatalf("error opening dir, dir: %q", dir)
 		}
 		log.Println(c.StartingDirs.Values[i])
-		c.StartingDirs.Values[i] = filepath.Join(wd, dir)
-		log.Println(filepath.Join(wd, dir))
+
+		abs, err := filepath.Abs(dir)
+		if err != nil {
+			log.Fatalf("error getting the absolute path for dir: %q, err: %v", dir, err)
+		}
+		c.StartingDirs.Values[i] = abs
 
 		// check if dir exists
 		fsInfo, err := f.Stat()
