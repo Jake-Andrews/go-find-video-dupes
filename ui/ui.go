@@ -2,9 +2,11 @@ package ui
 
 // ui.go
 import (
+	"fmt"
 	"image/color"
 	"log"
 	"sort"
+	"time"
 
 	"govdupes/internal/models"
 
@@ -136,6 +138,296 @@ func deleteVideosFromList(duplicatesList *DuplicatesList, videoData2d [][]*model
 	}
 }
 
+func selectIdentical(duplicatesList *DuplicatesList) {
+	duplicatesList.ClearSelection()
+
+	duplicatesList.mutex.Lock()
+	defer duplicatesList.mutex.Unlock()
+
+	// Group items by GroupIndex.
+	groupedItems := make(map[int][]*duplicateListItem)
+	for i := range duplicatesList.items {
+		item := &duplicatesList.items[i]
+		if item.IsColumnsHeader || item.IsGroupHeader || item.VideoData == nil {
+			continue
+		}
+		groupedItems[item.GroupIndex] = append(groupedItems[item.GroupIndex], item)
+	}
+
+	// Process each group to find and select identical items.
+	for _, items := range groupedItems {
+		identicalGroups := findIdenticalGroups(items)
+
+		// Select the first pair of identical items in each identical group.
+		for _, identicalItems := range identicalGroups {
+			if len(identicalItems) >= 2 {
+				identicalItems[0].Selected = true
+				identicalItems[1].Selected = true
+			}
+		}
+	}
+}
+
+// findIdenticalGroups identifies groups of items that are identical except for their path.
+func findIdenticalGroups(items []*duplicateListItem) [][]*duplicateListItem {
+	identicalMap := make(map[string][]*duplicateListItem)
+
+	for _, item := range items {
+		// Create a key representing the item's attributes excluding the path.
+		key := generateKeyExcludingPath(item.VideoData)
+		identicalMap[key] = append(identicalMap[key], item)
+	}
+
+	// Collect groups of identical items.
+	var identicalGroups [][]*duplicateListItem
+	for _, group := range identicalMap {
+		if len(group) > 1 {
+			identicalGroups = append(identicalGroups, group)
+		}
+	}
+
+	return identicalGroups
+}
+
+// generateKeyExcludingPath generates a unique key for a VideoData excluding its path.
+func generateKeyExcludingPath(videoData *models.VideoData) string {
+	if videoData == nil {
+		return ""
+	}
+	return fmt.Sprintf("%v|%v|%v|%v|%v", videoData.Video.Size, videoData.Video.Duration, videoData.Video.VideoCodec, videoData.Video.AudioCodec, videoData.Video.AvgFrameRate)
+}
+
+// selectAllButLargest selects every video in the group *except* the one(s) with the largest .Size.
+func selectAllButLargest(duplicatesList *DuplicatesList) {
+	duplicatesList.ClearSelection()
+
+	duplicatesList.mutex.Lock()
+	defer duplicatesList.mutex.Unlock()
+
+	// 1) Find the largest size per group.
+	groupMaxSize := make(map[int]int64)
+	for _, item := range duplicatesList.items {
+		if item.VideoData == nil {
+			continue
+		}
+		sz := item.VideoData.Video.Size
+		if sz > groupMaxSize[item.GroupIndex] {
+			groupMaxSize[item.GroupIndex] = sz
+		}
+	}
+
+	// 2) Select all items that are not the largest in that group.
+	for i := range duplicatesList.items {
+		item := &duplicatesList.items[i]
+		if item.VideoData == nil || item.IsGroupHeader || item.IsColumnsHeader {
+			continue
+		}
+		if item.VideoData.Video.Size < groupMaxSize[item.GroupIndex] {
+			item.Selected = true
+		}
+	}
+}
+
+// selectAllButSmallest selects every video in the group *except* the one(s) with the smallest .Size.
+func selectAllButSmallest(duplicatesList *DuplicatesList) {
+	duplicatesList.ClearSelection()
+
+	duplicatesList.mutex.Lock()
+	defer duplicatesList.mutex.Unlock()
+
+	// 1) Find the smallest size per group.
+	groupMinSize := make(map[int]int64)
+	// Initialize to a very large number so first real .Size comparison will replace it
+	for _, item := range duplicatesList.items {
+		if item.VideoData == nil {
+			continue
+		}
+		// only initialize if not set
+		if _, ok := groupMinSize[item.GroupIndex]; !ok {
+			groupMinSize[item.GroupIndex] = 1<<63 - 1 // max int64
+		}
+	}
+
+	for _, item := range duplicatesList.items {
+		if item.VideoData == nil {
+			continue
+		}
+		sz := item.VideoData.Video.Size
+		if sz < groupMinSize[item.GroupIndex] {
+			groupMinSize[item.GroupIndex] = sz
+		}
+	}
+
+	// 2) Select all items that are not the smallest in that group.
+	for i := range duplicatesList.items {
+		item := &duplicatesList.items[i]
+		if item.VideoData == nil || item.IsGroupHeader || item.IsColumnsHeader {
+			continue
+		}
+		if item.VideoData.Video.Size > groupMinSize[item.GroupIndex] {
+			item.Selected = true
+		}
+	}
+}
+
+// selectAllButNewest selects every video in the group *except* the one(s) with the newest (max) .ModifiedAt.
+func selectAllButNewest(duplicatesList *DuplicatesList) {
+	duplicatesList.ClearSelection()
+
+	duplicatesList.mutex.Lock()
+	defer duplicatesList.mutex.Unlock()
+
+	// 1) Find the newest (max) ModifiedAt per group.
+	groupMaxModified := make(map[int]time.Time)
+	for _, item := range duplicatesList.items {
+		if item.VideoData == nil {
+			continue
+		}
+		t := item.VideoData.Video.ModifiedAt
+		if t.After(groupMaxModified[item.GroupIndex]) {
+			groupMaxModified[item.GroupIndex] = t
+		}
+	}
+
+	// 2) Select all items that are not the newest in that group.
+	for i := range duplicatesList.items {
+		item := &duplicatesList.items[i]
+		if item.VideoData == nil || item.IsGroupHeader || item.IsColumnsHeader {
+			continue
+		}
+		t := item.VideoData.Video.ModifiedAt
+		// If this video's ModifiedAt is before the group's max, select it
+		if t.Before(groupMaxModified[item.GroupIndex]) {
+			item.Selected = true
+		}
+	}
+}
+
+// selectAllButOldest selects every video in the group *except* the one(s) with the oldest (min) .ModifiedAt.
+func selectAllButOldest(duplicatesList *DuplicatesList) {
+	duplicatesList.ClearSelection()
+
+	duplicatesList.mutex.Lock()
+	defer duplicatesList.mutex.Unlock()
+
+	// 1) Find the oldest (min) ModifiedAt per group.
+	// Initialize each group to a large time so we can compare properly
+	groupMinModified := make(map[int]time.Time)
+	for _, item := range duplicatesList.items {
+		if item.VideoData == nil {
+			continue
+		}
+		// Only initialize if not set (time.Time{}) is year 0001, we need the inverse approach
+		// so let's set it to a far future date.
+		if _, ok := groupMinModified[item.GroupIndex]; !ok {
+			groupMinModified[item.GroupIndex] = time.Date(3000, 1, 1, 0, 0, 0, 0, time.UTC)
+		}
+	}
+
+	for _, item := range duplicatesList.items {
+		if item.VideoData == nil {
+			continue
+		}
+		t := item.VideoData.Video.ModifiedAt
+		if t.Before(groupMinModified[item.GroupIndex]) {
+			groupMinModified[item.GroupIndex] = t
+		}
+	}
+
+	// 2) Select all items that are not the oldest in that group.
+	for i := range duplicatesList.items {
+		item := &duplicatesList.items[i]
+		if item.VideoData == nil || item.IsGroupHeader || item.IsColumnsHeader {
+			continue
+		}
+		t := item.VideoData.Video.ModifiedAt
+		// If this video's ModifiedAt is after the group's min, select it
+		if t.After(groupMinModified[item.GroupIndex]) {
+			item.Selected = true
+		}
+	}
+}
+
+// selectAllButHighestBitrate selects every video in the group *except* the one(s) with the highest .BitRate.
+func selectAllButHighestBitrate(duplicatesList *DuplicatesList) {
+	duplicatesList.ClearSelection()
+
+	duplicatesList.mutex.Lock()
+	defer duplicatesList.mutex.Unlock()
+
+	// 1) Find the highest bitrate per group.
+	groupMaxBitrate := make(map[int]int)
+	for _, item := range duplicatesList.items {
+		if item.VideoData == nil {
+			continue
+		}
+		br := item.VideoData.Video.BitRate
+		if br > groupMaxBitrate[item.GroupIndex] {
+			groupMaxBitrate[item.GroupIndex] = br
+		}
+	}
+
+	// 2) Select all items that are not the highest in that group.
+	for i := range duplicatesList.items {
+		item := &duplicatesList.items[i]
+		if item.VideoData == nil || item.IsGroupHeader || item.IsColumnsHeader {
+			continue
+		}
+		br := item.VideoData.Video.BitRate
+		if br < groupMaxBitrate[item.GroupIndex] {
+			item.Selected = true
+		}
+	}
+}
+
+// selectAllButLowestBitrate selects every video in the group *except* the one(s) with the lowest .BitRate.
+func selectAllButLowestBitrate(duplicatesList *DuplicatesList) {
+	duplicatesList.ClearSelection()
+
+	duplicatesList.mutex.Lock()
+	defer duplicatesList.mutex.Unlock()
+
+	// 1) Find the lowest bitrate per group.
+	// Initialize each group to a large int so we can properly compare
+	groupMinBitrate := make(map[int]int)
+	existingGroups := make(map[int]struct{})
+
+	// Identify all groups first
+	for _, item := range duplicatesList.items {
+		if item.VideoData == nil {
+			continue
+		}
+		existingGroups[item.GroupIndex] = struct{}{}
+	}
+	// Initialize min to a large number
+	for g := range existingGroups {
+		groupMinBitrate[g] = 1<<31 - 1 // big enough for typical 32-bit integer
+	}
+
+	// Now find the actual minimum
+	for _, item := range duplicatesList.items {
+		if item.VideoData == nil {
+			continue
+		}
+		br := item.VideoData.Video.BitRate
+		if br < groupMinBitrate[item.GroupIndex] {
+			groupMinBitrate[item.GroupIndex] = br
+		}
+	}
+
+	// 2) Select all items that are not the lowest in that group.
+	for i := range duplicatesList.items {
+		item := &duplicatesList.items[i]
+		if item.VideoData == nil || item.IsGroupHeader || item.IsColumnsHeader {
+			continue
+		}
+		br := item.VideoData.Video.BitRate
+		if br > groupMinBitrate[item.GroupIndex] {
+			item.Selected = true
+		}
+	}
+}
+
 func buildSortSelectDeleteTab(duplicatesList *DuplicatesList, videoData [][]*models.VideoData) fyne.CanvasObject {
 	// DELETE
 	deleteOptions := []string{"From list", "From list & DB", "From disk"}
@@ -165,6 +457,35 @@ func buildSortSelectDeleteTab(duplicatesList *DuplicatesList, videoData [][]*mod
 		duplicatesList.SetData(videoData)
 	})
 	// SELECT
+	selectOptions := []string{"Select identical except path/name", "Select all but the largest", "Select all but the smallest", "Select all but the newest", "Select all but the oldest", "Select all but the highest bitrate"}
+	selectLabel := widget.NewLabel("Select")
+	selectDropdown := widget.NewSelect(selectOptions, nil)
+	selectDropdown.PlaceHolder = "Select an option"
+	selectButton := widget.NewButton("Select", func() {
+		if selectDropdown.Selected == "" {
+			return // Do nothing if no option is selected
+		}
+
+		switch selectDropdown.Selected {
+		case "Select identical except path/name":
+			selectIdentical(duplicatesList)
+		case "Select all but the largest":
+			selectAllButLargest(duplicatesList)
+		case "Select all but the smallest":
+			selectAllButSmallest(duplicatesList)
+		case "Select all but the newest":
+			selectAllButNewest(duplicatesList)
+		case "Select all but the oldest":
+			selectAllButOldest(duplicatesList)
+		case "Select all but the highest bitrate":
+			selectAllButHighestBitrate(duplicatesList)
+		case "Select all but the lowest bitrate":
+			selectAllButLowestBitrate(duplicatesList)
+		}
+
+		// Refresh the duplicates list with the sorted data
+		duplicatesList.Refresh()
+	})
 
 	// SORT
 	sortOptions := []string{"Size", "Bitrate", "Resolution"}
@@ -214,6 +535,6 @@ func buildSortSelectDeleteTab(duplicatesList *DuplicatesList, videoData [][]*mod
 	})
 
 	// Combine label, dropdown, and button into a vertical layout
-	content := container.NewVBox(sortLabel, dropdown, sortButton, deleteLabel, deleteDropdown, deleteButton)
+	content := container.NewVBox(sortLabel, dropdown, sortButton, deleteLabel, deleteDropdown, deleteButton, selectLabel, selectDropdown, selectButton)
 	return content
 }
