@@ -582,42 +582,39 @@ func buildSortSelectDeleteTab(duplicatesList *DuplicatesList, videoData [][]*mod
 }
 
 func sortVideosByGroupSize(videoData [][]*models.VideoData, ascending bool) {
-	groupSizes := make([]int64, 0, len(videoData))
-	for _, group := range videoData {
-		if len(group) == 0 {
-			continue
-		}
+	sort.Slice(videoData, func(i, j int) bool {
+		calculateTotalSize := func(group []*models.VideoData) int64 {
+			uniqueInodeDeviceID := make(map[string]bool)
+			uniquePaths := make(map[string]bool)
+			totalSize := int64(0)
 
-		// Calculate unique total size for the group
-		uniqueInodeDeviceID := make(map[string]bool)
-		uniquePaths := make(map[string]bool)
-		totalSize := int64(0)
-
-		for _, vd := range group {
-			uniquePaths[vd.Video.Path] = true
-			if vd.Video.IsSymbolicLink {
-				if uniquePaths[vd.Video.SymbolicLink] {
+			for _, vd := range group {
+				uniquePaths[vd.Video.Path] = true
+				if vd.Video.IsSymbolicLink {
+					if uniquePaths[vd.Video.SymbolicLink] {
+						continue
+					}
+					totalSize += vd.Video.Size
 					continue
 				}
-				totalSize += vd.Video.Size
-				continue
-			}
 
-			identifier := fmt.Sprintf("%d:%d", vd.Video.Inode, vd.Video.Device)
+				identifier := fmt.Sprintf("%d:%d", vd.Video.Inode, vd.Video.Device)
 
-			if !uniqueInodeDeviceID[identifier] {
-				uniqueInodeDeviceID[identifier] = true
-				totalSize += vd.Video.Size
+				if !uniqueInodeDeviceID[identifier] {
+					uniqueInodeDeviceID[identifier] = true
+					totalSize += vd.Video.Size
+				}
 			}
+			return totalSize
 		}
-		groupSizes = append(groupSizes, totalSize)
-	}
-	log.Println(groupSizes)
-	sort.SliceStable(videoData, func(i, j int) bool {
+
+		sizeI := calculateTotalSize(videoData[i])
+		sizeJ := calculateTotalSize(videoData[j])
+
 		if ascending {
-			return groupSizes[i] < groupSizes[j]
+			return sizeI < sizeJ
 		}
-		return groupSizes[i] > groupSizes[j]
+		return sizeI > sizeJ
 	})
 }
 
@@ -626,7 +623,7 @@ func sortVideosByTotalVideos(videoData [][]*models.VideoData, ascending bool) {
 		return len(group)
 	}
 
-	sort.SliceStable(videoData, func(i, j int) bool {
+	sort.Slice(videoData, func(i, j int) bool {
 		if ascending {
 			return countVideos(videoData[i]) < countVideos(videoData[j])
 		}

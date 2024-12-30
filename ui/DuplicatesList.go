@@ -87,6 +87,13 @@ func (dl *DuplicatesList) SetData(videoData [][]*models.VideoData) {
 		}
 	}
 
+	for _, group := range videoData {
+		if len(group) < 2 {
+			log.Println("LESS THAN 2")
+			log.Println(group[0].Video.Path)
+		}
+	}
+
 	// Removing groups with 0 or 1 videos in place
 	j := 0
 	for i := 0; i < len(videoData); i++ {
