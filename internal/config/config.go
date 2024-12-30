@@ -44,6 +44,7 @@ type Config struct {
 	SaveSC              bool
 	AbsPath             bool
 	FollowSymbolicLinks bool
+	SkipSymbolicLinks   bool
 }
 
 func (c *Config) ParseArgs() {
@@ -65,6 +66,7 @@ func (c *Config) ParseArgs() {
 	flag.Var(&c.IncludeExt, "ie", "Specify extension(s) to include (use multiple times for multiple ext). Default value is \"mp4,m4a\".")
 	c.SaveSC = *flag.Bool("sc", true, "Flag to save screenshots to folder T/F. Default value is \"False\".")
 	c.FollowSymbolicLinks = *flag.Bool("fsl", true, "T/F. Default value is \"False\".")
+	c.SkipSymbolicLinks = true
 
 	flag.Parse()
 
@@ -79,6 +81,7 @@ func (c *Config) ParseArgs() {
 	log.Println("Include File Extensions:", c.IncludeExt.Values)
 	log.Println("Screenshot flag:", c.SaveSC)
 	log.Println("FollowSymbolicLinks:", c.FollowSymbolicLinks)
+	log.Println("SkipSymbolicLinks:", c.SkipSymbolicLinks)
 }
 
 // no return, exit if error

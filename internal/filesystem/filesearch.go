@@ -82,6 +82,10 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string) []models.V
 				log.Printf("Error trying to detect if file was a symbolic/hard link, path: %q", path)
 				return nil
 			}
+			if fileID.IsSymbolicLink && c.SkipSymbolicLinks {
+				log.Printf("Skipping file with path: %q as SkipSymbolicLinks flag was set to true", path)
+				return nil
+			}
 
 			if !checkValidVideo(path, fileInfo) {
 				log.Printf("Invalid video stats skipping video, path: %q, fileInfo.Name(): %q, fileInfo.Size(): %d", path, fileInfo.Name(), fileInfo.Size())
