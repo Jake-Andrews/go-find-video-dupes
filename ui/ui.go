@@ -428,7 +428,37 @@ func selectAllButLowestBitrate(duplicatesList *DuplicatesList) {
 	}
 }
 
+func selectAllSymbolicLinks(duplicatesList *DuplicatesList) {
+	duplicatesList.ClearSelection()
+
+	duplicatesList.mutex.Lock()
+	defer duplicatesList.mutex.Unlock()
+
+	for i := range duplicatesList.items {
+		item := &duplicatesList.items[i]
+		if item.VideoData != nil && item.VideoData.Video.IsSymbolicLink {
+			item.Selected = true
+		}
+	}
+}
+
+func selectAllVideos(duplicatesList *DuplicatesList) {
+	duplicatesList.ClearSelection()
+
+	duplicatesList.mutex.Lock()
+	defer duplicatesList.mutex.Unlock()
+
+	for i := range duplicatesList.items {
+		item := &duplicatesList.items[i]
+		if item.VideoData != nil {
+			item.Selected = true
+		}
+	}
+}
+
 func buildSortSelectDeleteTab(duplicatesList *DuplicatesList, videoData [][]*models.VideoData) fyne.CanvasObject {
+	// HIDE
+
 	// DELETE
 	deleteOptions := []string{"From list", "From list & DB", "From disk"}
 	deleteLabel := widget.NewLabel("Delete selected")
@@ -455,7 +485,7 @@ func buildSortSelectDeleteTab(duplicatesList *DuplicatesList, videoData [][]*mod
 	})
 
 	// SELECT
-	selectOptions := []string{"Select identical except path/name", "Select all but the largest", "Select all but the smallest", "Select all but the newest", "Select all but the oldest", "Select all but the highest bitrate"}
+	selectOptions := []string{"Select identical except path/name", "Select all but the largest", "Select all but the smallest", "Select all but the newest", "Select all but the oldest", "Select all but the highest bitrate", "Select all symbolic links", "Select all"}
 	selectLabel := widget.NewLabel("Select")
 	selectDropdown := widget.NewSelect(selectOptions, nil)
 	selectDropdown.PlaceHolder = "Select an option"
@@ -479,8 +509,11 @@ func buildSortSelectDeleteTab(duplicatesList *DuplicatesList, videoData [][]*mod
 			selectAllButHighestBitrate(duplicatesList)
 		case "Select all but the lowest bitrate":
 			selectAllButLowestBitrate(duplicatesList)
+		case "Select all symbolic links":
+			selectAllSymbolicLinks(duplicatesList)
+		case "Select all":
+			selectAllVideos(duplicatesList)
 		}
-
 		duplicatesList.Refresh()
 	})
 
@@ -549,11 +582,42 @@ func buildSortSelectDeleteTab(duplicatesList *DuplicatesList, videoData [][]*mod
 }
 
 func sortVideosByGroupSize(videoData [][]*models.VideoData, ascending bool) {
+	groupSizes := make([]int64, 0, len(videoData))
+	for _, group := range videoData {
+		if len(group) == 0 {
+			continue
+		}
+
+		// Calculate unique total size for the group
+		uniqueInodeDeviceID := make(map[string]bool)
+		uniquePaths := make(map[string]bool)
+		totalSize := int64(0)
+
+		for _, vd := range group {
+			uniquePaths[vd.Video.Path] = true
+			if vd.Video.IsSymbolicLink {
+				if uniquePaths[vd.Video.SymbolicLink] {
+					continue
+				}
+				totalSize += vd.Video.Size
+				continue
+			}
+
+			identifier := fmt.Sprintf("%d:%d", vd.Video.Inode, vd.Video.Device)
+
+			if !uniqueInodeDeviceID[identifier] {
+				uniqueInodeDeviceID[identifier] = true
+				totalSize += vd.Video.Size
+			}
+		}
+		groupSizes = append(groupSizes, totalSize)
+	}
+	log.Println(groupSizes)
 	sort.SliceStable(videoData, func(i, j int) bool {
 		if ascending {
-			return len(videoData[i]) < len(videoData[j])
+			return groupSizes[i] < groupSizes[j]
 		}
-		return len(videoData[i]) > len(videoData[j])
+		return groupSizes[i] > groupSizes[j]
 	})
 }
 
