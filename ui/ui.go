@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"image/color"
 	"log"
+	"os"
 	"sort"
+	"strconv"
 	"time"
 
 	"govdupes/internal/models"
@@ -115,27 +117,11 @@ func sortVideosByResolution(videoData [][]*models.VideoData, ascending bool) {
 	}
 }
 
+func deleteVideosFromDisk(duplicatesList *DuplicatesList, videoData2d [][]*models.VideoData) {
+	//
+}
+
 func deleteVideosFromList(duplicatesList *DuplicatesList, videoData2d [][]*models.VideoData) {
-	duplicatesList.mutex.Lock()
-	defer duplicatesList.mutex.Unlock()
-
-	selectedIDs := make(map[int64]struct{})
-
-	for _, item := range duplicatesList.items {
-		if item.Selected && item.VideoData != nil {
-			selectedIDs[item.VideoData.Video.ID] = struct{}{}
-		}
-	}
-
-	for i := range videoData2d {
-		filteredRow := videoData2d[i][:0]
-		for _, videoData := range videoData2d[i] {
-			if _, found := selectedIDs[videoData.Video.ID]; !found {
-				filteredRow = append(filteredRow, videoData)
-			}
-		}
-		videoData2d[i] = filteredRow
-	}
 }
 
 func selectIdentical(duplicatesList *DuplicatesList) {
@@ -459,6 +445,15 @@ func selectAllVideos(duplicatesList *DuplicatesList) {
 func buildSortSelectDeleteTab(duplicatesList *DuplicatesList, videoData [][]*models.VideoData) fyne.CanvasObject {
 	// HIDE
 
+	// HARDLINK
+	hardlinkLabel := widget.NewLabel("Hardlink selected videos to firstvideo in group. Need 2+ videos selected per group.")
+	hardlinkButton := widget.NewButton("Hardlink", func() {
+		hardlinkVideos(duplicatesList, videoData)
+		// remove selected videos from the list
+		deleteVideosFromList(duplicatesList, videoData)
+		duplicatesList.SetData(videoData)
+	})
+
 	// DELETE
 	deleteOptions := []string{"From list", "From list & DB", "From disk"}
 	deleteLabel := widget.NewLabel("Delete selected")
@@ -479,6 +474,8 @@ func buildSortSelectDeleteTab(duplicatesList *DuplicatesList, videoData [][]*mod
 			log.Println("Delete from list & DB")
 		case "From disk":
 			log.Println("Delete from disk")
+			// add a modal here
+			deleteVideosFromDisk(duplicatesList, videoData)
 		}
 
 		duplicatesList.SetData(videoData)
@@ -577,8 +574,79 @@ func buildSortSelectDeleteTab(duplicatesList *DuplicatesList, videoData [][]*mod
 		duplicatesList.SetData(videoData)
 	})
 
-	content := container.NewVBox(sortLabel, dropdown, sortButton, deleteLabel, deleteDropdown, deleteButton, selectLabel, selectDropdown, selectButton)
+	content := container.NewVBox(sortLabel, dropdown, sortButton, deleteLabel, deleteDropdown, deleteButton, selectLabel, selectDropdown, selectButton, hardlinkLabel, hardlinkButton)
 	return content
+}
+
+func hardlinkVideos(duplicatesList *DuplicatesList, videoData2d [][]*models.VideoData) {
+	// find videos that are selected
+	// for loop, check if files are already hard links, if not
+	// hard link them
+	selectedIDs := make(map[int64]struct{})
+
+	for _, item := range duplicatesList.items {
+		if item.Selected && item.VideoData != nil {
+			selectedIDs[item.VideoData.Video.ID] = struct{}{}
+		}
+	}
+
+	selectedVideos := []*models.Video{}
+	for i := range videoData2d {
+		for _, videoData := range videoData2d[i] {
+			if _, ok := selectedIDs[videoData.Video.ID]; ok {
+				selectedVideos = append(selectedVideos, &videoData.Video)
+			}
+		}
+		// need more than 1 file to hard link files together...
+		if len(selectedVideos) <= 1 {
+			log.Printf("Number of selected videos is not >= 2, selectedvids: %d, hard linking nothing", len(selectedVideos))
+			continue
+		}
+		// check if a file is already a hard linked with the first file
+		j := 1
+		for i := 1; i < len(selectedVideos); i++ {
+			// if this video is not a hardlink with [0]
+			if (selectedVideos[i].Inode != selectedVideos[0].Inode) || (selectedVideos[i].Device != selectedVideos[0].Device) {
+				selectedVideos[j] = selectedVideos[i]
+				j++
+			}
+		}
+		// trim list if videos were hardlinked to [0]
+		selectedVideos = selectedVideos[:j]
+		if len(selectedVideos) <= 1 {
+			log.Printf("All videos are already hard linked to each other, skipping hard linking these files")
+			continue
+		}
+
+		// tmp -> link -> mv -> rm
+		for i := 1; i < len(selectedVideos); i++ {
+			// temp
+			tmpDir := os.TempDir()
+			tmpFilePath := tmpDir + "/govdupes" + strconv.Itoa(int(time.Now().UnixNano()))
+			// link
+			err := os.Link(selectedVideos[0].Path, tmpFilePath)
+			if err != nil {
+				log.Printf("error encountered while hardlinking: %q to %q, err: %v", selectedVideos[0].Path, tmpFilePath, err)
+				err = os.Remove(tmpFilePath)
+				if err != nil {
+					log.Printf("Error removing tmp file: %q, giving up", tmpFilePath)
+				}
+				continue
+			}
+
+			// mv
+			err = os.Rename(tmpFilePath, selectedVideos[i].Path)
+			if err != nil {
+				log.Printf("Error moving tmp linked to selected video for the group: %q into file to be linked: %q", tmpFilePath, selectedVideos[i].Path)
+				err = os.Remove(tmpFilePath)
+				if err != nil {
+					log.Printf("Error removing tmp file: %q, giving up", tmpFilePath)
+				}
+				continue
+			}
+			log.Printf("Successfully linked: %q to %q", selectedVideos[i].Path, selectedVideos[0].Path)
+		}
+	}
 }
 
 func sortVideosByGroupSize(videoData [][]*models.VideoData, ascending bool) {
