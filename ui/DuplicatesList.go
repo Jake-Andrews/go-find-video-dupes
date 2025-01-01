@@ -113,7 +113,29 @@ func (dl *DuplicatesList) SetData(videoData [][]*models.VideoData) {
 			continue
 		}
 
-		groupHeaderText := fmt.Sprintf("Group %d (Total %d duplicates)", i+1, len(group))
+		// Calculate unique total size for the group
+		uniqueInodeDeviceID := make(map[string]bool)
+		uniquePaths := make(map[string]bool)
+		totalSize := int64(0)
+		for _, vd := range group {
+			uniquePaths[vd.Video.Path] = true
+			if vd.Video.IsSymbolicLink {
+				if uniquePaths[vd.Video.SymbolicLink] {
+					continue
+				}
+				totalSize += vd.Video.Size
+				continue
+			}
+			identifier := fmt.Sprintf("%d:%d", vd.Video.Inode, vd.Video.Device)
+			if !uniqueInodeDeviceID[identifier] {
+				uniqueInodeDeviceID[identifier] = true
+				totalSize += vd.Video.Size
+			}
+		}
+
+		groupHeaderText := fmt.Sprintf("Group %d (Total %d duplicates, Size: %s)",
+			i+1, len(group), formatFileSize(totalSize))
+
 		dl.items = append(dl.items, duplicateListItem{
 			IsGroupHeader: true,
 			GroupIndex:    i,
