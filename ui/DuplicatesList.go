@@ -87,22 +87,11 @@ func (dl *DuplicatesList) SetData(videoData [][]*models.VideoData) {
 		}
 	}
 
-	for _, group := range videoData {
-		if len(group) < 2 {
-			log.Println("LESS THAN 2")
-			log.Println(group[0].Video.Path)
-		}
-	}
-
-	// Removing groups with 0 or 1 videos in place
+	// Remove empty or single-item groups
 	j := 0
 	for i := 0; i < len(videoData); i++ {
 		group := videoData[i]
-		if len(group) == 0 {
-			log.Printf("Error empty group encountered removing")
-			continue
-		} else if len(group) == 1 {
-			log.Printf("Encountered only 1 video in a group removing: %q", group[0].Video.Path)
+		if len(group) <= 1 {
 			continue
 		}
 		videoData[j] = videoData[i]
@@ -115,6 +104,7 @@ func (dl *DuplicatesList) SetData(videoData [][]*models.VideoData) {
 		dl.items = append(dl.items, duplicateListItem{
 			IsColumnsHeader: true,
 		})
+		dl.list.SetItemHeight(len(dl.items)-1, 40) // Set height for the columns header
 	}
 
 	// Add group headers and video items
@@ -123,48 +113,23 @@ func (dl *DuplicatesList) SetData(videoData [][]*models.VideoData) {
 			continue
 		}
 
-		// Calculate unique total size for the group
-		uniqueInodeDeviceID := make(map[string]bool)
-		uniquePaths := make(map[string]bool)
-		totalSize := int64(0)
-
-		for _, vd := range group {
-			uniquePaths[vd.Video.Path] = true
-			if vd.Video.IsSymbolicLink {
-				if uniquePaths[vd.Video.SymbolicLink] {
-					continue
-				}
-				totalSize += vd.Video.Size
-				continue
-			}
-
-			identifier := fmt.Sprintf("%d:%d", vd.Video.Inode, vd.Video.Device)
-
-			if !uniqueInodeDeviceID[identifier] {
-				uniqueInodeDeviceID[identifier] = true
-				totalSize += vd.Video.Size
-			}
-		}
-
-		groupHeaderText := fmt.Sprintf("Group %d (Total %d duplicates, Size: %s)",
-			i+1, len(group), formatFileSize(totalSize))
-
+		groupHeaderText := fmt.Sprintf("Group %d (Total %d duplicates)", i+1, len(group))
 		dl.items = append(dl.items, duplicateListItem{
 			IsGroupHeader: true,
 			GroupIndex:    i,
 			HeaderText:    groupHeaderText,
 		})
+		dl.list.SetItemHeight(len(dl.items)-1, 40) // Set height for group headers
 
 		for _, vd := range group {
 			dl.items = append(dl.items, duplicateListItem{
 				GroupIndex: i,
 				VideoData:  vd,
 			})
+			dl.list.SetItemHeight(len(dl.items)-1, 148) // Set height for video rows
 		}
 	}
-
 	dl.mutex.Unlock()
-	// Refresh the list to apply new heights
 	dl.list.Refresh()
 }
 
