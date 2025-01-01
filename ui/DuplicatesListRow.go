@@ -59,23 +59,23 @@ func NewDuplicatesListRow(onTapped func(itemID int, selected bool)) *DuplicatesL
 
 	// Each header column uses grid-wrap with these widths & uniform height
 	col1Header := wrapWithBorder(
-		container.New(layout.NewGridWrapLayout(fyne.NewSize(532, 40)), headerLabel1),
+		container.New(layout.NewGridWrapLayout(fyne.NewSize(532, 50)), headerLabel1),
 		color.RGBA{255, 0, 0, 255},
 	)
 	col2Header := wrapWithBorder(
-		container.New(layout.NewGridWrapLayout(fyne.NewSize(200, 40)), headerLabel2),
+		container.New(layout.NewGridWrapLayout(fyne.NewSize(200, 50)), headerLabel2),
 		color.RGBA{0, 255, 0, 255},
 	)
 	col3Header := wrapWithBorder(
-		container.New(layout.NewGridWrapLayout(fyne.NewSize(120, 40)), headerLabel3),
+		container.New(layout.NewGridWrapLayout(fyne.NewSize(120, 50)), headerLabel3),
 		color.RGBA{0, 0, 255, 255},
 	)
 	col4Header := wrapWithBorder(
-		container.New(layout.NewGridWrapLayout(fyne.NewSize(100, 40)), headerLabel4),
+		container.New(layout.NewGridWrapLayout(fyne.NewSize(100, 50)), headerLabel4),
 		color.RGBA{255, 255, 0, 255},
 	)
 	col5Header := wrapWithBorder(
-		container.New(layout.NewGridWrapLayout(fyne.NewSize(120, 40)), headerLabel5),
+		container.New(layout.NewGridWrapLayout(fyne.NewSize(120, 50)), headerLabel5),
 		color.RGBA{255, 0, 255, 255},
 	)
 
@@ -91,7 +91,7 @@ func NewDuplicatesListRow(onTapped func(itemID int, selected bool)) *DuplicatesL
 	row.groupHeaderText.Alignment = fyne.TextAlignCenter
 
 	groupCol := wrapWithBorder(
-		container.New(layout.NewGridWrapLayout(fyne.NewSize(1024, 30)), row.groupHeaderText),
+		container.New(layout.NewGridWrapLayout(fyne.NewSize(1024, 50)), row.groupHeaderText),
 		color.RGBA{128, 128, 128, 255},
 	)
 	row.groupHeaderContainer = wrapWithBorder(

@@ -75,7 +75,6 @@ func NewDuplicatesList(videoData [][]*models.VideoData) *DuplicatesList {
 //     b) N video items
 func (dl *DuplicatesList) SetData(videoData [][]*models.VideoData) {
 	dl.mutex.Lock()
-
 	dl.items = nil
 
 	// Check if we have at least one non-empty group
@@ -104,7 +103,9 @@ func (dl *DuplicatesList) SetData(videoData [][]*models.VideoData) {
 		dl.items = append(dl.items, duplicateListItem{
 			IsColumnsHeader: true,
 		})
-		dl.list.SetItemHeight(len(dl.items)-1, 40) // Set height for the columns header
+		dl.mutex.Unlock()
+		dl.list.SetItemHeight(len(dl.items)-1, 50) // Set height for the columns header
+		dl.mutex.Lock()
 	}
 
 	// Add group headers and video items
@@ -141,14 +142,16 @@ func (dl *DuplicatesList) SetData(videoData [][]*models.VideoData) {
 			GroupIndex:    i,
 			HeaderText:    groupHeaderText,
 		})
-		dl.list.SetItemHeight(len(dl.items)-1, 40) // Set height for group headers
+		dl.mutex.Unlock()
+		dl.list.SetItemHeight(len(dl.items)-1, 50) // Set height for group headers
+		dl.mutex.Lock()
 
 		for _, vd := range group {
 			dl.items = append(dl.items, duplicateListItem{
 				GroupIndex: i,
 				VideoData:  vd,
 			})
-			dl.list.SetItemHeight(len(dl.items)-1, 148) // Set height for video rows
+			// dl.list.SetItemHeight(len(dl.items)-1, 148) // Set height for video rows
 		}
 	}
 	dl.mutex.Unlock()
