@@ -28,6 +28,7 @@ func InitDB(dbPath string) *sql.DB {
 	_, err = db.Exec(
 		`CREATE TABLE IF NOT EXISTS video (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
+            xxhash TEXT NOT NULL,
 			path TEXT NOT NULL,
 			fileName TEXT NOT NULL,
 			createdAt DATETIME,

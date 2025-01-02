@@ -4,6 +4,7 @@ go 1.23
 
 require (
 	fyne.io/fyne/v2 v2.5.3
+	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/corona10/goimagehash v1.1.0
 	github.com/georgysavva/scany/v2 v2.1.3
 	github.com/u2takey/ffmpeg-go v0.5.0

@@ -11,9 +11,9 @@ import (
 	"govdupes/internal/models"
 )
 
-func SearchDirs(c *config.Config) []models.Video {
+func SearchDirs(c *config.Config) []*models.Video {
 	log.Println("Searching directories")
-	videos := make([]models.Video, 0)
+	videos := make([]*models.Video, 0)
 
 	for _, dir := range c.StartingDirs.Values {
 		dir = filepath.Clean(strings.TrimSuffix(dir, "/"))
@@ -46,9 +46,9 @@ func SearchDirs(c *config.Config) []models.Video {
 // check if file name is in ignorestr, if so ignore
 // check if filename is in includestr, if so include consider the file
 // if both includeext/includestr agree then include the file
-func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string) []models.Video {
+func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string) []*models.Video {
 	log.Printf("Root: %q", root)
-	videos := make([]models.Video, 0)
+	videos := make([]*models.Video, 0)
 	fileTracker := NewFileTracker()
 
 	walkDirErr := fs.WalkDir(
@@ -93,7 +93,7 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string) []models.V
 			}
 
 			video := createVideo(path, fileInfo, *fileID)
-			videos = append(videos, video)
+			videos = append(videos, &video)
 			return nil
 		},
 	)

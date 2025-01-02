@@ -25,16 +25,14 @@ type videoRepo struct {
 	db *sql.DB
 }
 
-// NewVideoStore creates a new video repository.
 func NewVideoStore(DB *sql.DB) store.VideoStore {
 	return &videoRepo{
 		db: DB,
 	}
 }
 
-// GetDuplicateVideoData retrieves data for duplicate videos.
+// if bucket = -1 then the bucket did not contain two videos in it
 func (r *videoRepo) GetDuplicateVideoData(ctx context.Context) ([][]*models.VideoData, error) {
-	// Step 1: Fetch all videohashes
 	var videohashes []*models.Videohash
 	query := `
         SELECT id, FK_videohash_video, hashValue, hashType, duration, neighbours, bucket
@@ -46,7 +44,6 @@ func (r *videoRepo) GetDuplicateVideoData(ctx context.Context) ([][]*models.Vide
 		return nil, fmt.Errorf("querying videohashes: %w", err)
 	}
 
-	// Extract all video IDs from the fetched videohashes
 	videoIDs := getUniqueIDsFromVideohashes(videohashes)
 
 	// Step 2: Fetch related videos

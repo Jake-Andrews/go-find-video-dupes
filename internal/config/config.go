@@ -84,22 +84,15 @@ func (c *Config) ParseArgs() {
 	log.Println("SkipSymbolicLinks:", c.SkipSymbolicLinks)
 }
 
-// no return, exit if error
-// fix starting dir values .. . (relative paths fixed to absolute)
-// clean paths
+// no return exit if error
+// fix starting dir values .. . (relative paths chagned to absolute)
+// also clean paths and check if dir exists/is a dir
 func validateStartingDirs(c *Config) {
-	wd, err := os.Getwd()
-	if err != nil {
-		log.Fatalf("error getting wd, error: %v", err)
-	}
-	log.Println(wd)
-
 	for i, dir := range c.StartingDirs.Values {
 		f, err := os.Open(dir)
 		if err != nil {
 			log.Fatalf("error opening dir, dir: %q", dir)
 		}
-		log.Println(c.StartingDirs.Values[i])
 
 		abs, err := filepath.Abs(dir)
 		if err != nil {
@@ -119,18 +112,3 @@ func validateStartingDirs(c *Config) {
 		}
 	}
 }
-
-/*
-func createStartingDirs(c *Config) {
-	wd, err := os.Getwd()
-	if err != nil {
-		log.Fatalf("error getting working directory, error: %v", err)
-	}
-
-	for _, d := range c.StartingDirs.Values {
-		if strings.Contains(d, ".") {
-            d = wd :
-		}
-	}
-}
-*/
