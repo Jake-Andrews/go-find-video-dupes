@@ -26,7 +26,7 @@ type DuplicatesListRow struct {
 
 	// video row
 	screenshotContainer *fyne.Container
-	pathText            *canvas.Text
+	pathText            *widget.Label
 	statsLabel          *fyne.Container
 	codecsText          *canvas.Text
 	linksLabel          *fyne.Container
@@ -57,7 +57,6 @@ func NewDuplicatesListRow(onTapped func(itemID int, selected bool)) *DuplicatesL
 	headerLabel4 := newCenteredTruncatedText("Codecs")
 	headerLabel5 := newCenteredTruncatedText("Links")
 
-	// Each header column uses grid-wrap with these widths & uniform height
 	col1Header := wrapWithBorder(
 		container.New(layout.NewGridWrapLayout(fyne.NewSize(532, 50)), headerLabel1),
 		color.RGBA{255, 0, 0, 255},
@@ -91,7 +90,7 @@ func NewDuplicatesListRow(onTapped func(itemID int, selected bool)) *DuplicatesL
 	row.groupHeaderText.Alignment = fyne.TextAlignCenter
 
 	groupCol := wrapWithBorder(
-		container.New(layout.NewGridWrapLayout(fyne.NewSize(1024, 50)), row.groupHeaderText),
+		container.New(layout.NewGridWrapLayout(fyne.NewSize(1200, 50)), row.groupHeaderText),
 		color.RGBA{128, 128, 128, 255},
 	)
 	row.groupHeaderContainer = wrapWithBorder(
@@ -106,9 +105,10 @@ func NewDuplicatesListRow(onTapped func(itemID int, selected bool)) *DuplicatesL
 		container.NewCenter(container.NewHBox()),
 		color.RGBA{0, 255, 255, 255},
 	)
-
-	row.pathText = canvas.NewText("", color.White)
+	row.pathText = widget.NewLabel("")
 	row.pathText.Alignment = fyne.TextAlignLeading
+	row.pathText.Wrapping = fyne.TextWrapBreak
+
 	row.statsLabel = container.NewVBox()
 	row.codecsText = canvas.NewText("", color.White)
 	row.codecsText.Alignment = fyne.TextAlignLeading
@@ -122,7 +122,6 @@ func NewDuplicatesListRow(onTapped func(itemID int, selected bool)) *DuplicatesL
 		container.New(layout.NewGridWrapLayout(fyne.NewSize(200, 120)), newLeftAlignedContainer(row.pathText)),
 		color.RGBA{0, 128, 128, 255},
 	)
-	// We will replace col3 and col5 content at runtime in updateVideoRow
 	col3 := wrapWithBorder(
 		container.New(layout.NewGridWrapLayout(fyne.NewSize(120, 120)), row.statsLabel),
 		color.RGBA{75, 0, 130, 255},
@@ -142,7 +141,6 @@ func NewDuplicatesListRow(onTapped func(itemID int, selected bool)) *DuplicatesL
 	)
 
 	row.ExtendBaseWidget(row)
-	log.Println("return")
 	return row
 }
 
@@ -178,11 +176,9 @@ func (r *DuplicatesListRow) Tapped(_ *fyne.PointEvent) {
 }
 
 func (r *DuplicatesListRow) CreateRenderer() fyne.WidgetRenderer {
-	// Create a background rectangle that will be drawn behind everything else
 	bg := canvas.NewRectangle(r.backgroundColor())
 
-	// Stack background at the bottom (Max layout), then place the actual content on top
-	// The content is a VBox of (possibly) columns header, group header, or video row
+	// Stack background at the bottom, then place actual content on top
 	content := container.NewStack(
 		bg,
 		container.NewVBox(
@@ -255,13 +251,13 @@ func formatDuration(seconds float32) string {
 }
 
 // Helper function to create a left-aligned, vertically centered container for canvas.Text
-func newLeftAlignedCanvasText(text string, color color.Color) *canvas.Text {
-	txt := canvas.NewText(text, color)
+func newLeftAlignedCanvasText(text string, clr color.Color) *canvas.Text {
+	txt := canvas.NewText(text, clr)
 	txt.Alignment = fyne.TextAlignLeading
 	return txt
 }
 
-// Refactor updateVideoRow to use canvas.Text
+// Populate the video row
 func (r *DuplicatesListRow) updateVideoRow(item duplicateListItem) {
 	vd := item.VideoData
 	if vd == nil {
@@ -328,25 +324,34 @@ type duplicatesListRowRenderer struct {
 }
 
 func (r *duplicatesListRowRenderer) Layout(size fyne.Size) {
-	// Resize the background rectangle to fill the entire row area
+	// This is called by Fyne whenever the row is resized
+	// log.Println("Row Layout: wanted height =", size.Height)
+	// log.Println("pathText.MinSize().Height =", r.row.pathText.MinSize().Height)
+
 	r.background.Resize(size)
 
-	// Let the content container (VBox + Max) fill the row’s space
-	r.container.Resize(size)
+	// Adjust position to center content vertically
+	contentHeight := r.container.MinSize().Height
+	offsetY := (size.Height - contentHeight) / 2
+
+	r.container.Move(fyne.NewPos(0, offsetY))
+	r.container.Resize(fyne.NewSize(size.Width, contentHeight))
 }
 
 func (r *duplicatesListRowRenderer) MinSize() fyne.Size {
+	// For column or group headers, fixed height 50
 	if r.row.isGroupHeader {
-		return fyne.NewSize(600, 30) // Smaller height for group headers
+		return fyne.NewSize(1200, 50)
 	} else if r.row.isColumnsHeader {
-		return fyne.NewSize(600, 40) // Height for column headers
+		return fyne.NewSize(1200, 50)
 	}
-	return fyne.NewSize(600, 148) // Default height for video rows
+
+	// For video rows, ensure at least 148
+	contentHeight := r.row.pathText.MinSize().Height
+	return fyne.NewSize(1200, fyne.Max(148, contentHeight))
 }
 
 func (r *duplicatesListRowRenderer) Objects() []fyne.CanvasObject {
-	// We only have two top-level objects in `container.NewMax`:
-	//  the background rectangle and the stacked container
 	return []fyne.CanvasObject{r.background, r.container}
 }
 
@@ -355,4 +360,6 @@ func (r *duplicatesListRowRenderer) Refresh() {
 	r.background.Refresh()
 	r.container.Refresh()
 }
+
 func (r *duplicatesListRowRenderer) Destroy() {}
+

@@ -31,7 +31,7 @@ func CreateUI(videoData [][]*models.VideoData) {
 	}
 
 	scroll := container.NewVScroll(duplicatesListWidget)
-	scroll.SetMinSize(fyne.NewSize(1024, 768))
+	scroll.SetMinSize(fyne.NewSize(1200, 768))
 
 	duplicatesTab := scroll
 	themeTab := buildThemeTab(a)
@@ -47,7 +47,7 @@ func CreateUI(videoData [][]*models.VideoData) {
 	log.Println("Creating main application window")
 	window := a.NewWindow("govdupes")
 	window.SetContent(tabs)
-	window.Resize(fyne.NewSize(1024, 900))
+	window.Resize(fyne.NewSize(1300, 900))
 
 	log.Println("Showing application window")
 	window.ShowAndRun()
@@ -698,3 +698,4 @@ func sortVideosByTotalVideos(videoData [][]*models.VideoData, ascending bool) {
 		return countVideos(videoData[i]) > countVideos(videoData[j])
 	})
 }
+
