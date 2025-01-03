@@ -14,13 +14,12 @@ const (
 )
 
 type Videohash struct {
-	ID               int64    `db:"id"`
-	FKVideohashVideo int64    `db:"FK_videohash_video"`
-	HashType         HashType `db:"hashType"`
-	HashValue        string   `db:"hashValue"`
-	Duration         float32  `db:"duration"`
-	Neighbours       IntSlice `db:"neighbours"`
-	Bucket           int      `db:"bucket"`
+	ID         int64    `db:"id"`
+	HashType   HashType `db:"hashType"`
+	HashValue  string   `db:"hashValue"`
+	Duration   float32  `db:"duration"`
+	Neighbours IntSlice `db:"neighbours"`
+	Bucket     int      `db:"bucket"`
 }
 
 // Metadata    Metadata `db:"metadata"`

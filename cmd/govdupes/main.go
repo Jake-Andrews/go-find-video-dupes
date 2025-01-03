@@ -52,15 +52,6 @@ func main() {
 		log.Fatalf("Error getting videos from data, err: %v\n", err)
 	}
 	videosNotInDB := reconcileVideosWithDB(videos, dbVideos)
-	for _, v := range videos {
-		digest := xxhash.NewWithSeed(uint64(v.Size))
-		if err := CalculateXXHash(digest, v); err != nil {
-			v.XXHash = ""
-			continue
-		}
-		v.XXHash = strconv.FormatUint(digest.Sum64(), 10)
-		log.Println(v)
-	}
 
 	validVideos := make([]*models.Video, 0, len(videosNotInDB))
 	for _, v := range videosNotInDB {
@@ -70,6 +61,14 @@ func main() {
 			log.Printf("Error getting video info, skipping file with path: %q, err: %v\n", v.Path, err)
 			continue
 		}
+
+		digest := xxhash.NewWithSeed(uint64(v.Size))
+		if err := CalculateXXHash(digest, v); err != nil {
+			v.XXHash = ""
+			continue
+		}
+		v.XXHash = strconv.FormatUint(digest.Sum64(), 10)
+
 		validVideos = append(validVideos, v)
 	}
 
@@ -138,60 +137,19 @@ func main() {
 	ui.CreateUI(duplicateVideoData)
 }
 
-// writeDuplicatesToJSON(dupeVideoIndexes, fVideos, "dups.json")
-
-// Compare dbvideos to filesearch videos
-// If a video from filesearch == to a dbvideo
-// Then reuse dbvideo and don't calculate hash/sc
-// If the video path == dbvideo path but the rest of the video's
-// Other stats are different then delete dbvideo and calc hash/sc
-
-// Or...calculate md5 hash for each video in addition to the
-// Phash
-// After running filesearch compare each new video with a dbvideo
-// and use the md5 hash to identify videos that are = to a previous
-// video even if their path's are different
-
-// The implication of the above is that videos will be stored in the DB//
-// forever so this check can be done. Possibly put them in a seperate
-// DB table.
-
-// Compares videos from searching fs with videos from DB
-// If the path are = and inode/device then use the db video and don't
-// calculate phash for the video
-// If the size is = then calculate the xxhash, if hashes are = then
-// use the db video
 func reconcileVideosWithDB(v []*models.Video, dbVideos []*models.Video) []*models.Video {
 	// map[video struct field]models.Video quickly check if video exists in DB
 	dbPathToVideo := make(map[string]models.Video, len(dbVideos))
-	dbSizeToVideoSlice := make(map[int64][]models.Video, len(v))
 	videosToCalc := make([]*models.Video, 0, len(v))
 	for _, video := range dbVideos {
 		dbPathToVideo[video.Path] = *video
-		dbSizeToVideoSlice[video.Size] = append(dbSizeToVideoSlice[video.Size], *video)
 	}
 
-	h := xxhash.New()
 	for _, video := range v {
 		// check if videos path exists in db already
 		if match, exists := dbPathToVideo[video.Path]; exists {
 			if video.Size == match.Size && video.Inode == match.Inode && video.Device == match.Device {
-				log.Printf("Skipping video from filesearch found video in DB with the same: size1: %d = size2: %d, inode1: %d = inode2: %d, device1: %d = device2: %d", video.Size, match.Size, video.Inode, match.Inode, video.Device, match.Device)
-				continue
-			} // check if videos size exists in db already, if so calc xxhash
-		} else if matches, e := dbSizeToVideoSlice[video.Size]; e {
-			foundAMatch := false
-			for _, m := range matches {
-				h.ResetWithSeed(uint64(video.Size))
-				CalculateXXHash(h, video)
-				hStr := strconv.FormatUint(h.Sum64(), 10)
-				if hStr == m.XXHash {
-					log.Printf("Skipping video from filsearch found video in DB with the same: XXHash1: %q = %q XXHash2", hStr, m.XXHash)
-					foundAMatch = true
-				}
-				video.XXHash = hStr
-			}
-			if foundAMatch {
+				log.Printf("Skipping video from filesearch found video in DB with the same: size1: %d = size2: %d, inode: %d=%d, device: %d=%d", video.Size, match.Size, video.Inode, match.Inode, video.Device, match.Device)
 				continue
 			}
 		}
@@ -273,3 +231,22 @@ func writeDuplicatesToJSON(dupeVideoIndexes [][]int, fVideos []*models.Video, ou
 	log.Printf("Duplicate groups successfully written to %s", outputPath)
 	return nil
 }
+
+/*
+else if matches, e := dbSizeToVideoSlice[video.Size]; e {
+			foundAMatch := false
+			for _, m := range matches {
+				h.ResetWithSeed(uint64(video.Size))
+				CalculateXXHash(h, video)
+				hStr := strconv.FormatUint(h.Sum64(), 10)
+				if hStr == m.XXHash {
+					log.Printf("Skipping video from filsearch found video in DB with the same: XXHash1: %q = %q XXHash2", hStr, m.XXHash)
+					foundAMatch = true
+				}
+				video.XXHash = hStr
+			}
+			if foundAMatch {
+				continue
+			}
+		}
+*/

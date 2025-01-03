@@ -27,13 +27,22 @@ type Video struct {
 	Device         uint64    `db:"device" json:"device"`
 	AvgFrameRate   float32   `db:"avgFrameRate" json:"avgFrameRate"`
 	SampleRateAvg  int       `db:"sampleRateAvg" json:"sampleRateAvg"`
-	Corrupted      bool
+	Corrupted      bool      // not in DB, for internal logic
+
+	FKVideoVideohash int64 `db:"FK_video_videohash" json:"FK_video_videohash"`
 }
 
 func (v Video) String() string {
 	return fmt.Sprintf(
-		`ID: %d, XXHash: %s, Path: %s, FileName: %s, CreatedAt: %s, ModifiedAt: %s, AvgFrameRate: %.2f, VideoCodec: %s, AudioCodec: %s, Width: %d, Height: %d, Duration: %.2f, Size: %d, BitRate: %d, 
-	NumHardLinks: %d, SymbolicLink: %s, IsSymbolicLink: %t, IsHardLink: %t, Inode: %d, Device: %d, Corrupted: %t`,
-		v.ID, v.XXHash, v.Path, v.FileName, v.CreatedAt.Format(time.RFC3339), v.ModifiedAt.Format(time.RFC3339), v.AvgFrameRate, v.VideoCodec, v.AudioCodec, v.Width, v.Height, v.Duration, v.Size, v.BitRate,
-		v.NumHardLinks, v.SymbolicLink, v.IsSymbolicLink, v.IsHardLink, v.Inode, v.Device, v.Corrupted)
+		`ID: %d, XXHash: %s, Path: %s, FileName: %s, CreatedAt: %s, ModifiedAt: %s, 
+AvgFrameRate: %.2f, VideoCodec: %s, AudioCodec: %s, Width: %d, Height: %d, Duration: %.2f, 
+Size: %d, BitRate: %d, NumHardLinks: %d, SymbolicLink: %s, IsSymbolicLink: %t, 
+IsHardLink: %t, Inode: %d, Device: %d, Corrupted: %t, FKVideoVideohash: %d`,
+		v.ID, v.XXHash, v.Path, v.FileName,
+		v.CreatedAt.Format(time.RFC3339), v.ModifiedAt.Format(time.RFC3339),
+		v.AvgFrameRate, v.VideoCodec, v.AudioCodec, v.Width, v.Height, v.Duration,
+		v.Size, v.BitRate, v.NumHardLinks, v.SymbolicLink, v.IsSymbolicLink,
+		v.IsHardLink, v.Inode, v.Device, v.Corrupted, v.FKVideoVideohash,
+	)
 }
+
