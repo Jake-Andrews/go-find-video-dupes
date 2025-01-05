@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"image"
 	"image/draw"
-	"log"
+	"log/slog"
 
 	"govdupes/internal/models"
 	"govdupes/internal/videoprocessor"
@@ -19,7 +19,7 @@ func Create(vp *videoprocessor.FFmpegWrapper, v *models.Video) (*models.Videohas
 	timestamps := createTimeStamps(v.Duration, models.NumImages)
 	images, err := createScreenshots(vp, timestamps, v)
 	if err != nil {
-		log.Printf("Error creating screenshots, err: %v\n", err)
+		slog.Error("Error creating screenshots", slog.Any("error", err))
 		return nil, nil, err
 	}
 
@@ -27,18 +27,18 @@ func Create(vp *videoprocessor.FFmpegWrapper, v *models.Video) (*models.Videohas
 
 	image, err := createCollage(images)
 	if err != nil {
-		log.Printf("Error creating collage, err: %v\n", err)
+		slog.Error("Error creating collage", slog.Any("error", err))
 	}
 
 	hash, err := goimagehash.PerceptionHash(image)
 	if err != nil {
-		log.Printf("Error creating phash, err: %v", err)
+		slog.Error("Error creating phash", slog.Any("error", err))
 	}
 	h := hash.ToString()
-	log.Printf("File: %q has pHash: %q", v.FileName, hash.ToString())
+	slog.Info("File has pHash", slog.String("file", v.FileName), slog.String("pHash", hash.ToString()))
 
 	pHash := createPhash(v, h)
-	log.Println(*pHash)
+	slog.Debug("Created pHash", slog.Any("pHash", *pHash))
 
 	return pHash, &screenshots, nil
 }
@@ -78,11 +78,14 @@ func createScreenshots(vp *videoprocessor.FFmpegWrapper, timestamps []string, v 
 	buf := bytes.Buffer{}
 
 	for _, t := range timestamps {
-		vp.ScreenshotAtTime(v.Path, &buf, t)
+		err := vp.ScreenshotAtTime(v.Path, &buf, t)
+		if err != nil {
+			return nil, fmt.Errorf("skipping file, cannot generate screenshots, err: %q", err)
+		}
 
 		img, err := bmp.Decode(&buf)
 		if err != nil {
-			log.Printf("Error decoding image, err: %v\n", err)
+			slog.Error("Error decoding image", slog.Any("error", err))
 			return images, err
 		}
 
@@ -149,3 +152,4 @@ func ConvertImagesToBase64(images []image.Image) ([]string, error) {
 	}
 	return encodedStrings, nil
 }
+

@@ -2,30 +2,29 @@ package sqlite
 
 import (
 	"database/sql"
-	"log"
+	"log/slog"
 
 	_ "modernc.org/sqlite"
 )
 
 func InitDB(dbPath string) *sql.DB {
+	slog.Info("Initializing database connection", slog.String("Path", dbPath))
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
-		log.Fatalf("Error opening SQLite database connection: %v\n", err)
+		slog.Error("Error opening SQLite database connection", slog.String("Path", dbPath), slog.Any("error", err))
 		return db
 	}
 
 	err = db.Ping()
 	if err != nil {
-		log.Fatalf("Error pinging SQLite database: %v\n", err)
+		slog.Error("Error pinging SQLite database", slog.Any("error", err))
 		return nil
 	}
 
 	_, err = db.Exec("PRAGMA foreign_keys = ON;")
 	if err != nil {
-		log.Fatalf("Error setting PRAGMA foreign_keys = ON: %v\n", err)
+		slog.Error("Error setting PRAGMA foreign_keys", slog.Any("error", err))
 	}
-
-	// 1) Recreate the "video" table with a new FK referencing the "videohash" table
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS video (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,10 +54,8 @@ func InitDB(dbPath string) *sql.DB {
 		);
 	`)
 	if err != nil {
-		log.Fatalf("Error initializing the video table: %v\n", err)
+		slog.Error("Error creating the video table", slog.Any("error", err))
 	}
-
-	// 2) Change the "videohash" table to remove the FK to "video"
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS videohash (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,10 +68,8 @@ func InitDB(dbPath string) *sql.DB {
 		);
 	`)
 	if err != nil {
-		log.Fatalf("Error initializing the videohash table: %v\n", err)
+		slog.Error("Error creating the videohash table", slog.Any("error", err))
 	}
-
-	// 3) "screenshot" still references "videohash"
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS screenshot (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,10 +79,9 @@ func InitDB(dbPath string) *sql.DB {
 		);
 	`)
 	if err != nil {
-		log.Fatalf("Error initializing the screenshot table: %v\n", err)
+		slog.Error("Error creating the screenshot table", slog.Any("error", err))
 	}
 
-	log.Println("Successfully initialized the database!")
+	slog.Info("Database initialized successfully")
 	return db
 }
-

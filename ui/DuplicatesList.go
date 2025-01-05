@@ -1,12 +1,9 @@
-////////////////////////////////////////////////////////////////////////////////
-// DuplicatesList.go
-////////////////////////////////////////////////////////////////////////////////
-
+// duplicateList.go
 package ui
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 
 	"fyne.io/fyne/v2"
@@ -39,8 +36,7 @@ type DuplicatesList struct {
 
 // NewDuplicatesList creates and returns our custom DuplicatesList.
 func NewDuplicatesList(videoData [][]*models.VideoData) *DuplicatesList {
-	log.Println("Creating DuplicatesList")
-
+	slog.Info("Creating DuplicatesList")
 	dl := &DuplicatesList{}
 	dl.ExtendBaseWidget(dl)
 
@@ -165,14 +161,14 @@ func (dl *DuplicatesList) updateListRow(itemID widget.ListItemID, co fyne.Canvas
 	dl.mutex.RLock()
 
 	if itemID < 0 || itemID >= len(dl.items) {
-		log.Printf("Item ID %d out of bounds", itemID)
+		slog.Warn("Item ID out of bounds", slog.Int("itemID", itemID))
 		dl.mutex.RUnlock()
 		return
 	}
 
 	row, ok := co.(*DuplicatesListRow)
 	if !ok {
-		log.Printf("Type assertion failed for itemID %d", itemID)
+		slog.Warn("Type assertion failed for itemID", slog.Int("itemID", itemID))
 		dl.mutex.RUnlock()
 		return
 	}

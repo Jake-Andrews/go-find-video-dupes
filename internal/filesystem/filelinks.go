@@ -3,7 +3,7 @@ package filesystem
 import (
 	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -31,7 +31,6 @@ func NewFileTracker() *FileTracker {
 }
 
 func (ft *FileTracker) CheckHardLink(path string, info fs.FileInfo) (*FileIdentity, error) {
-	// syscall get the file's info
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
 		return nil, fmt.Errorf("failed to get raw file stats, path: %q", path)
@@ -39,7 +38,6 @@ func (ft *FileTracker) CheckHardLink(path string, info fs.FileInfo) (*FileIdenti
 
 	fileID := FileIdentity{NumHardLinks: stat.Nlink, Inode: stat.Ino, Device: stat.Dev}
 
-	// If we've seen the deviceID & Inode before, then it's a hard link.
 	if _, exists := ft.seen[fileID]; exists {
 		fileID.IsHardLink = true
 		return &fileID, nil
@@ -57,7 +55,7 @@ func IsSymbolicLink(path string) (bool, error) {
 	}
 
 	if info.Mode()&os.ModeSymlink != 0 {
-		log.Printf("Symbolic link detected: %q", path)
+		slog.Info("Symbolic link detected", slog.String("path", path))
 		return true, nil
 	}
 	return false, nil
@@ -72,12 +70,12 @@ func (ft *FileTracker) FindFileLinks(path string, c config.Config) (*FileIdentit
 
 	fileID, err := ft.CheckHardLink(path, info)
 	if err != nil {
-		log.Println(err)
+		slog.Error("Error checking hard link", slog.Any("error", err))
 		return fileID, err
 	}
 
 	if info.Mode()&os.ModeSymlink != 0 {
-		log.Printf("Symbolic link detected: %q", path)
+		slog.Info("Symbolic link detected", slog.String("path", path))
 		fileID.IsSymbolicLink = true
 
 		if c.FollowSymbolicLinks {

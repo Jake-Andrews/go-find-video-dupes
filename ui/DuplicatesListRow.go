@@ -362,4 +362,3 @@ func (r *duplicatesListRowRenderer) Refresh() {
 }
 
 func (r *duplicatesListRowRenderer) Destroy() {}
-

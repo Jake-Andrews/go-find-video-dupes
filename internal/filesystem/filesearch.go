@@ -2,7 +2,7 @@ package filesystem
 
 import (
 	"io/fs"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,31 +12,28 @@ import (
 )
 
 func SearchDirs(c *config.Config) []*models.Video {
-	log.Println("Searching directories")
+	slog.Info("Searching directories")
 	videos := make([]*models.Video, 0)
 
 	for _, dir := range c.StartingDirs.Values {
 		dir = filepath.Clean(strings.TrimSuffix(dir, "/"))
-		log.Printf("Searching recursively starting from: %q\n", dir)
+		slog.Info("Searching recursively", slog.String("starting_dir", dir))
 		info, err := os.Stat(dir)
 		if err != nil {
-			log.Printf("Error accessing directory %q: %v\n", dir, err)
+			slog.Error("Error accessing directory", slog.String("dir", dir), slog.Any("error", err))
 			continue
 		}
 		if !info.IsDir() {
-			log.Printf("Skipping %q because it's not a directory\n", dir)
+			slog.Warn("Skipping because it's not a directory", slog.String("dir", dir))
 			continue
 		}
 		fileSystem := os.DirFS(dir)
 		videos = append(videos, getVideosFromFS(fileSystem, c, dir)...)
-		//log.Println("Printing all files found: ")
-		//for _, v := range videos {
-		//	log.Println(v)
-		//}
 	}
 
 	if len(videos) == 0 {
-		log.Fatalf("Quitting, no files were found!\n")
+		slog.Error("No files were found! Exiting.")
+		os.Exit(1)
 	}
 	return videos
 }
@@ -47,7 +44,7 @@ func SearchDirs(c *config.Config) []*models.Video {
 // check if filename is in includestr, if so include consider the file
 // if both includeext/includestr agree then include the file
 func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string) []*models.Video {
-	log.Printf("Root: %q", root)
+	slog.Info("Processing root directory", slog.String("root", root))
 	videos := make([]*models.Video, 0)
 	fileTracker := NewFileTracker()
 
@@ -56,16 +53,13 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string) []*models.
 		".",
 		func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
-				log.Printf("Error walking through filesystem, err: %v\n", err)
+				slog.Error("Error walking through filesystem", slog.Any("error", err))
 				return err
 			}
 			if d.IsDir() {
 				return nil
 			}
-			if !validExt(path, c) {
-				return nil
-			}
-			if !validFileName(d, c) {
+			if !validExt(path, c) || !validFileName(d, c) {
 				return nil
 			}
 
@@ -73,22 +67,30 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string) []*models.
 
 			fileInfo, err := d.Info()
 			if err != nil {
-				log.Printf("Error getting the fs.DirEntry.Info(), err: %v\n", err)
+				slog.Error("Error getting file info", slog.String("path", path), slog.Any("error", err))
+				return nil
+			}
+
+			if fileInfo.Size() < c.FilesizeCutoff {
+				slog.Info("Skipping file due to size cutoff",
+					slog.String("path", path),
+					slog.Int64("size", fileInfo.Size()),
+					slog.Int64("cutoff", c.FilesizeCutoff))
 				return nil
 			}
 
 			fileID, err := fileTracker.FindFileLinks(path, *c)
 			if err != nil {
-				log.Printf("Error trying to detect if file was a symbolic/hard link, path: %q", path)
+				slog.Error("Error detecting symbolic/hard link", slog.String("path", path), slog.Any("error", err))
 				return nil
 			}
 			if fileID.IsSymbolicLink && c.SkipSymbolicLinks {
-				log.Printf("Skipping file with path: %q as SkipSymbolicLinks flag was set to true", path)
+				slog.Info("Skipping symbolic link", slog.String("path", path))
 				return nil
 			}
 
 			if !checkValidVideo(path, fileInfo) {
-				log.Printf("Invalid video stats skipping video, path: %q, fileInfo.Name(): %q, fileInfo.Size(): %d", path, fileInfo.Name(), fileInfo.Size())
+				slog.Warn("Invalid video file", slog.String("path", path))
 				return nil
 			}
 
@@ -99,9 +101,9 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string) []*models.
 	)
 
 	if walkDirErr != nil {
-		log.Println(walkDirErr)
+		slog.Error("Error walking through directories", slog.Any("error", walkDirErr))
 	}
-	log.Println("Finished searching directories")
+	slog.Info("Finished searching directories")
 	return videos
 }
 
@@ -148,7 +150,6 @@ func checkIncludeStr(fileName string, includeStrs []string) bool {
 	fileNameLower := strings.ToLower(fileName)
 	for _, s := range includeStrs {
 		if strings.Contains(fileNameLower, strings.ToLower(s)) {
-			log.Printf("IncludeStr matches, filename: %q, includestr: %q\n", fileName, includeStrs)
 			return true
 		}
 	}

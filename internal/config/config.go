@@ -3,7 +3,8 @@ package config
 import (
 	"errors"
 	"flag"
-	"log"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,7 +24,6 @@ func (s *StringSlice) Set(value string) error {
 		s.Values = nil
 		s.wipeDefault = false
 	}
-
 	values := strings.Split(value, ",")
 	for _, v := range values {
 		v = strings.TrimSpace(v)
@@ -41,10 +41,12 @@ type Config struct {
 	IncludeStr          StringSlice
 	IgnoreExt           StringSlice
 	IncludeExt          StringSlice
+	FilesizeCutoff      int64 // in bytes
 	SaveSC              bool
 	AbsPath             bool
 	FollowSymbolicLinks bool
 	SkipSymbolicLinks   bool
+	LogFilePath         string
 }
 
 func (c *Config) ParseArgs() {
@@ -57,58 +59,87 @@ func (c *Config) ParseArgs() {
 	c.SaveSC = false
 	c.AbsPath = true
 	c.FollowSymbolicLinks = false
-
-	flag.Var(&c.DatabasePath, "dp", "Specify database path where the database will live. Default value is \"./videos.db\".")
-	flag.Var(&c.StartingDirs, "sd", "Specify directory path(s) where the search will begin from (use multiple times for multiple Directories). Default value is \".\".")
-	flag.Var(&c.IgnoreStr, "igs", "Specify string(s) to ignore (use multiple times for multiple strings). Default value is \"\".")
-	flag.Var(&c.IncludeStr, "is", "Specify string(s) to include (use multiple times for multiple strings). Default value is \"\".")
-	flag.Var(&c.IgnoreExt, "ige", "Specify extension(s) to ignore (use multiple times for multiple ext). Default value is \"\".")
-	flag.Var(&c.IncludeExt, "ie", "Specify extension(s) to include (use multiple times for multiple ext). Default value is \"mp4,m4a\".")
-	c.SaveSC = *flag.Bool("sc", true, "Flag to save screenshots to folder T/F. Default value is \"False\".")
-	c.FollowSymbolicLinks = *flag.Bool("fsl", true, "T/F. Default value is \"False\".")
 	c.SkipSymbolicLinks = true
+
+	flag.Var(&c.DatabasePath, "dp", `Specify database path (default "./videos.db").`)
+	flag.Var(&c.StartingDirs, "sd", `Directory path(s) to search (default "."), multiple allowed.`)
+	flag.Var(&c.IgnoreStr, "igs", "String(s) to ignore, multiple allowed.")
+	flag.Var(&c.IncludeStr, "is", "String(s) to include, multiple allowed.")
+	flag.Var(&c.IgnoreExt, "ige", "Extension(s) to ignore, multiple allowed.")
+	flag.Var(&c.IncludeExt, "ie", "Extension(s) to include, multiple allowed.")
+
+	fileSizeGiB := flag.Float64("fs", 0, "Max file size in GiB (default 0).")
+	c.SaveSC = *flag.Bool("sc", true, "Flag to save screenshots, T/F (default False).")
+	c.FollowSymbolicLinks = *flag.Bool("fsl", true, "Follow symbolic links, T/F (default False).")
+	c.LogFilePath = *flag.String("log", "app.log", "Path to log file (default = app.log).")
 
 	flag.Parse()
 
-	// get full path for startingdirs, ie: ./ or . to /path/path
+	c.FilesizeCutoff = int64(*fileSizeGiB * 1024 * 1024 * 1024)
 	validateStartingDirs(c)
-
-	log.Println("DatabasePath:", c.DatabasePath.Values)
-	log.Println("StartingDirs:", c.StartingDirs.Values)
-	log.Println("Ignore File Strings:", c.IgnoreStr.Values)
-	log.Println("Include File Strings:", c.IncludeStr.Values)
-	log.Println("Ignore File Extensions:", c.IgnoreExt.Values)
-	log.Println("Include File Extensions:", c.IncludeExt.Values)
-	log.Println("Screenshot flag:", c.SaveSC)
-	log.Println("FollowSymbolicLinks:", c.FollowSymbolicLinks)
-	log.Println("SkipSymbolicLinks:", c.SkipSymbolicLinks)
 }
 
-// no return exit if error
-// fix starting dir values .. . (relative paths chagned to absolute)
-// also clean paths and check if dir exists/is a dir
+// validateStartingDirs ensures starting directories exist and are actually dirs.
 func validateStartingDirs(c *Config) {
 	for i, dir := range c.StartingDirs.Values {
 		f, err := os.Open(dir)
 		if err != nil {
-			log.Fatalf("error opening dir, dir: %q", dir)
+			slog.Error("Error opening dir",
+				slog.String("dir", dir),
+				slog.Any("error", err))
+			continue // or os.Exit(1) if you want to fail immediately
 		}
 
 		abs, err := filepath.Abs(dir)
 		if err != nil {
-			log.Fatalf("error getting the absolute path for dir: %q, err: %v", dir, err)
+			slog.Error("Error getting the absolute path for dir",
+				slog.String("dir", dir),
+				slog.Any("error", err))
+			continue // or os.Exit(1)
 		}
 		c.StartingDirs.Values[i] = abs
 
-		// check if dir exists
 		fsInfo, err := f.Stat()
 		if errors.Is(err, os.ErrNotExist) {
-			log.Fatalf("error calling stat on dir: %q dir does not exist, err: %v", dir, err)
+			slog.Error("Directory does not exist",
+				slog.String("dir", dir),
+				slog.Any("error", err))
+			continue
 		} else if err != nil {
-			log.Fatalf("error calling stat on dir, not a os.ErrNotExist error. dir %q, err: %v", dir, err)
+			slog.Error("Error calling stat on dir",
+				slog.String("dir", dir),
+				slog.Any("error", err))
+			continue
 		}
 		if !fsInfo.IsDir() {
-			log.Fatalf("error dir: %q is not a valid directory", dir)
+			slog.Error("Path is not a valid directory", slog.String("dir", dir))
 		}
 	}
 }
+
+// SetupLogger creates a slog Logger that writes either to a file (JSON) or stdout (text).
+// SetupLogger creates a slog Logger that writes to both a file and stdout/stderr.
+func SetupLogger(logFilePath string) *slog.Logger {
+	opts := &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}
+
+	var writers []io.Writer
+	writers = append(writers, os.Stdout)
+
+	if logFilePath != "" {
+		file, err := os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			slog.Error("Failed to open log file",
+				slog.String("path", logFilePath),
+				slog.Any("error", err))
+			os.Exit(1)
+		}
+		writers = append(writers, file)
+	}
+
+	multiWriter := io.MultiWriter(writers...)
+
+	return slog.New(slog.NewJSONHandler(multiWriter, opts))
+}
+

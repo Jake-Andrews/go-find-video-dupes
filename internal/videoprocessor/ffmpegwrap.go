@@ -3,7 +3,7 @@ package videoprocessor
 import (
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 
 	"govdupes/internal/models"
@@ -26,7 +26,11 @@ func (f *FFmpegWrapper) ScreenshotAtTime(filePath string, scWriter io.Writer, ti
 	width := models.Width
 	height := models.Height
 
-	log.Printf("Creating a screenshot %d:%d, at: %q, filePath: %q\n", width, height, timeStamp, filePath)
+	slog.Info("Creating screenshot",
+		slog.Int("Width", width),
+		slog.Int("Height", height),
+		slog.String("Timestamp", timeStamp),
+		slog.String("FilePath", filePath))
 
 	err := ffmpeg.
 		Input(filePath, ffmpeg.KwArgs{"ss": timeStamp, "hide_banner": "", "loglevel": f.logLevel}).
@@ -41,20 +45,24 @@ func (f *FFmpegWrapper) ScreenshotAtTime(filePath string, scWriter io.Writer, ti
 		ErrorToStdOut().
 		Run()
 	if err != nil {
-		log.Println("Error ScreenshotAtTime")
+		slog.Error("Error creating screenshot", slog.Any("error", err))
 		return err
 	}
 	return nil
 }
 
 func (f *FFmpegWrapper) ScreenshotAtTimeSave(filePath string, scWriter io.Writer, timeStamp string, saveToFile bool, outputPath string) error {
-	log.Printf("Creating a screenshot at: %q, filePath: %q\n", timeStamp, filePath)
+	slog.Info("Creating screenshot with save option",
+		slog.String("Timestamp", timeStamp),
+		slog.String("FilePath", filePath),
+		slog.Bool("SaveToFile", saveToFile),
+		slog.String("OutputPath", outputPath))
 
 	var fileWriter io.Writer
 	if saveToFile {
 		file, err := os.Create(outputPath)
 		if err != nil {
-			log.Printf("Error creating file %q: %v\n", outputPath, err)
+			slog.Error("Error creating output file", slog.String("OutputPath", outputPath), slog.Any("error", err))
 			return err
 		}
 		defer file.Close()
@@ -77,35 +85,36 @@ func (f *FFmpegWrapper) ScreenshotAtTimeSave(filePath string, scWriter io.Writer
 
 	err := ffmpegCmd.Run()
 	if err != nil {
-		log.Printf("Error in ScreenshotAtTime: %v\n", err)
+		slog.Error("Error creating screenshot with save", slog.Any("error", err))
 		return err
 	}
 
 	if saveToFile {
-		log.Printf("Screenshot saved to file: %q\n", outputPath)
+		slog.Info("Screenshot saved to file", slog.String("OutputPath", outputPath))
 	}
 
 	return nil
 }
 
 func (f *FFmpegWrapper) NormalizeVideo(vWriter io.Writer, v *models.Video, kwargs ffmpeg.KwArgs) {
+	slog.Info("Normalizing video", slog.String("Path", v.Path))
 	ffErr := ffmpeg.
 		Input(v.Path).
-		Filter("scale", ffmpeg.Args{"64:64"}). // Resize to 64x64 pixels
-		Filter("fps", ffmpeg.Args{"15"}).      // Set frame rate to 15 fps
+		Filter("scale", ffmpeg.Args{"64:64"}).
+		Filter("fps", ffmpeg.Args{"15"}).
 		Output("pipe:",
 			ffmpeg.KwArgs{
-				"pix_fmt":  "yuv444p",    // RGB24 color format
-				"vcodec":   "libx264",    // Video codec
-				"movflags": "+faststart", // MP4 format optimization
-				"an":       "",           // Disable audio
+				"pix_fmt":  "yuv444p",
+				"vcodec":   "libx264",
+				"movflags": "+faststart",
+				"an":       "",
 				"f":        "mpegts",
 			}).
 		WithOutput(vWriter).
-		GlobalArgs("-loglevel", "verbose"). // Set verbose logging
+		GlobalArgs("-loglevel", "verbose").
 		ErrorToStdOut().
 		Run()
 	if ffErr != nil {
-		log.Fatalf("Error using ffmpeg to generate normalized video, video: %v, err: %v", v, ffErr)
+		slog.Error("Error normalizing video", slog.Any("error", ffErr), slog.Any("video", v))
 	}
 }

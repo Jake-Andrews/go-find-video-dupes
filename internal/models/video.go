@@ -45,4 +45,3 @@ IsHardLink: %t, Inode: %d, Device: %d, Corrupted: %t, FKVideoVideohash: %d`,
 		v.IsHardLink, v.Inode, v.Device, v.Corrupted, v.FKVideoVideohash,
 	)
 }
-

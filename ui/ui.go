@@ -1,13 +1,13 @@
+// ui.go
 package ui
 
-// ui.go
 import (
 	"fmt"
 	"image/color"
-	"log"
+	"log/slog"
 	"os"
+	"path/filepath"
 	"sort"
-	"strconv"
 	"time"
 
 	"govdupes/internal/models"
@@ -20,14 +20,15 @@ import (
 )
 
 func CreateUI(videoData [][]*models.VideoData) {
-	log.Println("Starting CreateUI")
+	slog.Info("Starting CreateUI")
 
 	a := app.New()
-	log.Println("Fyne app initialized")
+	slog.Info("Fyne app initialized")
 
 	duplicatesListWidget := NewDuplicatesList(videoData)
 	if duplicatesListWidget == nil {
-		log.Fatal("Failed to create DuplicatesList widget")
+		slog.Error("Failed to create DuplicatesList widget")
+		os.Exit(1)
 	}
 
 	scroll := container.NewVScroll(duplicatesListWidget)
@@ -44,12 +45,12 @@ func CreateUI(videoData [][]*models.VideoData) {
 	)
 	tabs.SetTabLocation(container.TabLocationTop)
 
-	log.Println("Creating main application window")
+	slog.Info("Creating main application window")
 	window := a.NewWindow("govdupes")
 	window.SetContent(tabs)
 	window.Resize(fyne.NewSize(1300, 900))
 
-	log.Println("Showing application window")
+	slog.Info("Showing application window")
 	window.ShowAndRun()
 }
 
@@ -446,10 +447,11 @@ func buildSortSelectDeleteTab(duplicatesList *DuplicatesList, videoData [][]*mod
 	// HIDE
 
 	// HARDLINK
-	hardlinkLabel := widget.NewLabel("Hardlink selected videos to firstvideo in group. Need 2+ videos selected per group.")
+	hardlinkLabel := widget.NewLabel("Hardlink selected videos to first video in group. Need 2+ videos selected per group.")
 	hardlinkButton := widget.NewButton("Hardlink", func() {
+		slog.Info("Hardlink button pressed")
 		hardlinkVideos(duplicatesList, videoData)
-		// remove selected videos from the list
+		// Remove selected videos from the list
 		deleteVideosFromList(duplicatesList, videoData)
 		duplicatesList.SetData(videoData)
 	})
@@ -458,23 +460,23 @@ func buildSortSelectDeleteTab(duplicatesList *DuplicatesList, videoData [][]*mod
 	deleteOptions := []string{"From list", "From list & DB", "From disk"}
 	deleteLabel := widget.NewLabel("Delete selected")
 	deleteDropdown := widget.NewSelect(deleteOptions, nil)
-	deleteDropdown.PlaceHolder = "Selection an option"
+	deleteDropdown.PlaceHolder = "Select an option"
 
 	deleteButton := widget.NewButton("Delete", func() {
 		if deleteDropdown.Selected == "" {
-			log.Println("Nothing selected")
+			slog.Warn("No delete option selected")
 			return
 		}
 
 		switch deleteDropdown.Selected {
 		case "From list":
 			deleteVideosFromList(duplicatesList, videoData)
-			log.Println("Delete from list")
+			slog.Info("Deleted from list")
 		case "From list & DB":
-			log.Println("Delete from list & DB")
+			slog.Info("Deleted from list & database")
 		case "From disk":
-			log.Println("Delete from disk")
-			// add a modal here
+			slog.Info("Deleted from disk")
+			// Add a modal here
 			deleteVideosFromDisk(duplicatesList, videoData)
 		}
 
@@ -504,8 +506,6 @@ func buildSortSelectDeleteTab(duplicatesList *DuplicatesList, videoData [][]*mod
 			selectAllButOldest(duplicatesList)
 		case "Select all but the highest bitrate":
 			selectAllButHighestBitrate(duplicatesList)
-		case "Select all but the lowest bitrate":
-			selectAllButLowestBitrate(duplicatesList)
 		case "Select all symbolic links":
 			selectAllSymbolicLinks(duplicatesList)
 		case "Select all":
@@ -579,74 +579,67 @@ func buildSortSelectDeleteTab(duplicatesList *DuplicatesList, videoData [][]*mod
 }
 
 func hardlinkVideos(duplicatesList *DuplicatesList, videoData2d [][]*models.VideoData) {
-	// find videos that are selected
-	// for loop, check if files are already hard links, if not
-	// hard link them
+	slog.Info("Starting hardlinkVideos function")
+
+	// Map to store selected video IDs to avoid processing duplicates
 	selectedIDs := make(map[int64]struct{})
 
+	// Collect selected video IDs from duplicatesList
 	for _, item := range duplicatesList.items {
+		slog.Info("duplicatesList.items")
 		if item.Selected && item.VideoData != nil {
 			selectedIDs[item.VideoData.Video.ID] = struct{}{}
+			slog.Info("duplicatesList.items", slog.String("item.VideoData.Video.Path", item.VideoData.Video.Path))
 		}
 	}
 
-	selectedVideos := []*models.Video{}
-	for i := range videoData2d {
-		for _, videoData := range videoData2d[i] {
+	// Iterate over groups of video data
+	for groupIdx, group := range videoData2d {
+		slog.Info("Processing group", slog.Int("groupIdx", groupIdx), slog.Int("videoCount", len(group)))
+
+		// Filter selected videos in the current group
+		var selectedVideos []*models.Video
+		for _, videoData := range group {
 			if _, ok := selectedIDs[videoData.Video.ID]; ok {
 				selectedVideos = append(selectedVideos, &videoData.Video)
 			}
 		}
-		// need more than 1 file to hard link files together...
+
 		if len(selectedVideos) <= 1 {
-			log.Printf("Number of selected videos is not >= 2, selectedvids: %d, hard linking nothing", len(selectedVideos))
-			continue
-		}
-		// check if a file is already a hard linked with the first file
-		j := 1
-		for i := 1; i < len(selectedVideos); i++ {
-			// if this video is not a hardlink with [0]
-			if (selectedVideos[i].Inode != selectedVideos[0].Inode) || (selectedVideos[i].Device != selectedVideos[0].Device) {
-				selectedVideos[j] = selectedVideos[i]
-				j++
-			}
-		}
-		// trim list if videos were hardlinked to [0]
-		selectedVideos = selectedVideos[:j]
-		if len(selectedVideos) <= 1 {
-			log.Printf("All videos are already hard linked to each other, skipping hard linking these files")
+			slog.Warn("Less than 2 selected videos, skipping hardlinking", slog.Int("groupIdx", groupIdx))
 			continue
 		}
 
-		// tmp -> link -> mv -> rm
+		// Perform hardlinking
 		for i := 1; i < len(selectedVideos); i++ {
-			// temp
-			tmpDir := os.TempDir()
-			tmpFilePath := tmpDir + "/govdupes" + strconv.Itoa(int(time.Now().UnixNano()))
-			// link
-			err := os.Link(selectedVideos[0].Path, tmpFilePath)
-			if err != nil {
-				log.Printf("error encountered while hardlinking: %q to %q, err: %v", selectedVideos[0].Path, tmpFilePath, err)
-				err = os.Remove(tmpFilePath)
-				if err != nil {
-					log.Printf("Error removing tmp file: %q, giving up", tmpFilePath)
-				}
+			// Extract the directory from the path of the first selected
+			// videos. Scrapy fix in case program is being run for a path on
+			// another machine (cannot hardlink across filesystems)
+			baseDir := filepath.Dir(selectedVideos[0].Path)
+
+			// Construct the temporary file path in the same directory
+			tmpFilePath := fmt.Sprintf("%s/govdupes_%d.tmp", baseDir, time.Now().UnixNano())
+
+			slog.Info("Creating hardlink", slog.String("sourcePath", selectedVideos[0].Path), slog.String("tempPath", tmpFilePath))
+
+			slog.Info("Creating hardlink", slog.String("sourcePath", selectedVideos[0].Path), slog.String("tempPath", tmpFilePath))
+
+			if err := os.Link(selectedVideos[0].Path, tmpFilePath); err != nil {
+				slog.Error("Failed to create hardlink", slog.String("path", selectedVideos[0].Path), slog.Any("error", err))
 				continue
 			}
 
-			// mv
-			err = os.Rename(tmpFilePath, selectedVideos[i].Path)
-			if err != nil {
-				log.Printf("Error moving tmp linked to selected video for the group: %q into file to be linked: %q", tmpFilePath, selectedVideos[i].Path)
-				err = os.Remove(tmpFilePath)
-				if err != nil {
-					log.Printf("Error removing tmp file: %q, giving up", tmpFilePath)
-				}
+			if err := os.Rename(tmpFilePath, selectedVideos[i].Path); err != nil {
+				slog.Error("Failed to move hardlinked file", slog.String("path", selectedVideos[i].Path), slog.Any("error", err))
+				_ = os.Remove(tmpFilePath)
 				continue
 			}
-			log.Printf("Successfully linked: %q to %q", selectedVideos[i].Path, selectedVideos[0].Path)
+
+			slog.Info("Successfully hardlinked:", slog.String("path", selectedVideos[0].Path), slog.String("path", selectedVideos[i].Path))
 		}
 	}
+
+	slog.Info("Finished hardlinkVideos function")
 }
 
 func sortVideosByGroupSize(videoData [][]*models.VideoData, ascending bool) {
@@ -698,4 +691,3 @@ func sortVideosByTotalVideos(videoData [][]*models.VideoData, ascending bool) {
 		return countVideos(videoData[i]) > countVideos(videoData[j])
 	})
 }
-

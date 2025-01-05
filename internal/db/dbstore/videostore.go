@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"image"
-	"log"
+	"log/slog"
 	"reflect"
 	"strings"
 
@@ -33,80 +33,117 @@ func NewVideoStore(DB *sql.DB) store.VideoStore {
 
 // GetDuplicateVideoData returns video-hash groups that share the same bucket (bucket != -1).
 // This reflects "duplicate groups" or related items.
+// GetDuplicateVideoData now selects all videos,
+// then loads each video’s videohash (if any), plus screenshots for that hash.
 func (r *videoRepo) GetDuplicateVideoData(ctx context.Context) ([][]*models.VideoData, error) {
-	// 1) Fetch all videohashes with a valid bucket (bucket != -1)
+	// 1) Fetch all videohashes
 	var videohashes []*models.Videohash
 	query := `
-        SELECT id, hashValue, hashType, duration, neighbours, bucket
+        SELECT *
         FROM videohash
-        WHERE bucket != -1;
     `
 	if err := sqlscan.Select(ctx, r.db, &videohashes, query); err != nil {
-		return nil, fmt.Errorf("querying videohashes: %w", err)
+		return nil, fmt.Errorf("querying videohashes: %v", err)
 	}
-
 	if len(videohashes) == 0 {
-		// No matching videohashes, so return empty
-		return nil, nil
+		return nil, nil // no videohashes => empty
 	}
 
-	// 2) For each videohash, get all videos referencing it
+	// Collect videohash IDs
 	hashIDs := make([]int64, 0, len(videohashes))
 	for _, vh := range videohashes {
 		hashIDs = append(hashIDs, vh.ID)
 	}
 
-	// Retrieve videos grouped by videohash ID
-	videosByHashID, err := r.getVideosByVideohashIDs(ctx, hashIDs)
+	// 2) Fetch related videos for each videohash
+	videosByHashID, err := r.GetVideosByVideohashIDs(ctx, hashIDs)
 	if err != nil {
 		return nil, fmt.Errorf("fetching related videos: %w", err)
 	}
 
-	// 3) Fetch screenshots for these videohash IDs
-	screenshots, err := r.getScreenshotsByVideohashIDs(ctx, hashIDs)
+	// 3) Fetch screenshots keyed by videohash ID
+	screenshotMap, err := r.getScreenshotsByVideohashIDs(ctx, hashIDs)
 	if err != nil {
-		return nil, fmt.Errorf("fetching related screenshots: %w", err)
+		return nil, fmt.Errorf("fetching screenshots: %w", err)
 	}
 
-	// 4) Combine data into a set of groups keyed by bucket
-	groupedVideoData := map[int][]*models.VideoData{}
+	// 4) Group everything by bucket, ensuring all combinations are created
+	groupedByBucket := make(map[int][]*models.VideoData)
 
 	for _, vh := range videohashes {
-		// For each videohash, find the associated videos
-		videosForHash := videosByHashID[vh.ID]
-
-		// If no screenshots found, we create an empty record
-		sc, hasScreenshot := screenshots[vh.ID]
-		if !hasScreenshot {
-			sc = &models.Screenshots{}
+		if vh.Bucket == -1 {
+			continue
+		}
+		vids := videosByHashID[vh.ID]
+		sc := screenshotMap[vh.ID]
+		if sc == nil {
+			sc = &models.Screenshots{} // placeholder if no screenshots
 		}
 
-		// For each video referencing this hash, build a VideoData
-		for _, vid := range videosForHash {
-			videoData := &models.VideoData{
-				Video:      *vid,
+		// Create VideoData for each video, ensuring redundancy
+		if len(vids) > 0 {
+			for _, vid := range vids {
+				groupedByBucket[vh.Bucket] = append(groupedByBucket[vh.Bucket], &models.VideoData{
+					Video:      *vid,
+					Videohash:  *vh,
+					Screenshot: *sc,
+				})
+			}
+		} else {
+			// If no videos reference this hash, still store the hash + screenshot
+			groupedByBucket[vh.Bucket] = append(groupedByBucket[vh.Bucket], &models.VideoData{
 				Videohash:  *vh,
 				Screenshot: *sc,
-			}
-			groupedVideoData[vh.Bucket] = append(groupedVideoData[vh.Bucket], videoData)
-		}
-
-		// If no videos found at all, at least store the hash + screenshot info
-		if len(videosForHash) == 0 {
-			videoData := &models.VideoData{
-				Videohash:  *vh,
-				Screenshot: *sc,
-			}
-			groupedVideoData[vh.Bucket] = append(groupedVideoData[vh.Bucket], videoData)
+			})
 		}
 	}
 
-	// Convert grouped map into a slice of slices
-	result := make([][]*models.VideoData, 0, len(groupedVideoData))
-	for _, group := range groupedVideoData {
-		result = append(result, group)
+	// 5) Convert map => slice of slices
+	//    each sub-slice = all videos that share the same bucket
+	var result [][]*models.VideoData
+	for _, group := range groupedByBucket {
+		if len(group) >= 2 {
+			result = append(result, group)
+		}
 	}
+
 	return result, nil
+}
+
+func (r *videoRepo) GetVideosByVideohashIDs(ctx context.Context, hashIDs []int64) (map[int64][]*models.Video, error) {
+	// Ensure there are hashIDs to query
+	if len(hashIDs) == 0 {
+		return nil, nil
+	}
+
+	// Generate placeholders for the IN clause
+	placeholders := make([]string, len(hashIDs))
+	args := make([]interface{}, len(hashIDs))
+	for i, id := range hashIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	// Construct the query
+	query := fmt.Sprintf(`
+        SELECT *
+        FROM video
+        WHERE FK_video_videohash IN (%s)
+    `, strings.Join(placeholders, ", "))
+
+	// Execute the query
+	var videos []*models.Video
+	if err := sqlscan.Select(ctx, r.db, &videos, query, args...); err != nil {
+		return nil, fmt.Errorf("querying videos by videohash IDs: %w", err)
+	}
+
+	// Group videos by their FK_video_videohash
+	videosByHashID := make(map[int64][]*models.Video)
+	for _, video := range videos {
+		videosByHashID[video.FKVideoVideohash] = append(videosByHashID[video.FKVideoVideohash], video)
+	}
+
+	return videosByHashID, nil
 }
 
 // GetVideosWithValidHashes retrieves videos that have valid hashes (bucket != -1).
@@ -210,35 +247,49 @@ func (r *videoRepo) CreateVideo(ctx context.Context, video *models.Video, hash *
 		}
 	}()
 
-	// 1) Insert the videohash record
-	neighboursJSON, err := json.Marshal(hash.Neighbours)
-	if err != nil {
-		return fmt.Errorf("marshal neighbours: %w", err)
+	// Step 1: Check if the videohash already exists
+	var existingHashID int64
+	err = tx.QueryRowContext(ctx, `
+		SELECT id
+		FROM videohash
+		WHERE hashValue = ? AND hashType = ? AND duration = ?;
+	`, hash.HashValue, hash.HashType, hash.Duration).Scan(&existingHashID)
+
+	if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("error checking for existing hash: %w", err)
 	}
 
-	hashInsert := `
-		INSERT INTO videohash (hashValue, hashType, duration, neighbours, bucket)
-		VALUES (?, ?, ?, ?, ?);
-	`
-	hashResult, err := tx.ExecContext(ctx, hashInsert,
-		hash.HashValue,
-		hash.HashType,
-		hash.Duration,
-		string(neighboursJSON),
-		hash.Bucket,
-	)
-	if err != nil {
-		return fmt.Errorf("insert hash: %w", err)
-	}
-	hashID, err := hashResult.LastInsertId()
-	if err != nil {
-		return fmt.Errorf("retrieve hash ID: %w", err)
+	if err == sql.ErrNoRows {
+		// Step 2: Insert the videohash record if it doesn't exist
+		neighboursJSON, err := json.Marshal(hash.Neighbours)
+		if err != nil {
+			return fmt.Errorf("marshal neighbours: %w", err)
+		}
+
+		hashInsert := `
+			INSERT INTO videohash (hashValue, hashType, duration, neighbours, bucket)
+			VALUES (?, ?, ?, ?, ?);
+		`
+		hashResult, err := tx.ExecContext(ctx, hashInsert,
+			hash.HashValue,
+			hash.HashType,
+			hash.Duration,
+			string(neighboursJSON),
+			hash.Bucket,
+		)
+		if err != nil {
+			return fmt.Errorf("insert hash: %w", err)
+		}
+		existingHashID, err = hashResult.LastInsertId()
+		if err != nil {
+			return fmt.Errorf("retrieve hash ID: %w", err)
+		}
 	}
 
-	// 2) Now attach that videohash to the video
-	video.FKVideoVideohash = hashID
+	// Step 3: Now attach the existing/new videohash to the video
+	video.FKVideoVideohash = existingHashID
 
-	// 3) Insert the video referencing the new videohash
+	// Step 4: Insert the video referencing the existing/new videohash
 	cols, placeholders, vals, err := buildInsertQueryAndValues(video)
 	if err != nil {
 		return fmt.Errorf("build insert data for video: %w", err)
@@ -258,7 +309,7 @@ func (r *videoRepo) CreateVideo(ctx context.Context, video *models.Video, hash *
 	}
 	video.ID = videoID
 
-	// 4) Insert screenshot referencing the same videohash
+	// Step 5: Insert screenshot referencing the same videohash
 	base64Images, err := sc.EncodeImages()
 	if err != nil {
 		return fmt.Errorf("error encoding images to base64, err: %v", err)
@@ -270,7 +321,7 @@ func (r *videoRepo) CreateVideo(ctx context.Context, video *models.Video, hash *
 
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO screenshot (FK_screenshot_videohash, screenshots) VALUES (?, ?);`,
-		hashID, string(jsonImages),
+		existingHashID, string(jsonImages),
 	); err != nil {
 		return fmt.Errorf("insert screenshot: %w", err)
 	}
@@ -349,19 +400,24 @@ func (r *videoRepo) GetAllVideoHashes(ctx context.Context) ([]*models.Videohash,
 
 // BulkUpdateVideohashes updates multiple videohash rows in a single transaction.
 func (r *videoRepo) BulkUpdateVideohashes(ctx context.Context, updates []*models.Videohash) error {
+	if len(updates) == 0 {
+		slog.Info("No updates provided for videohash records")
+		return nil
+	}
+
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		log.Printf("Error starting transaction: %v", err)
+		slog.Error("Error starting transaction", slog.String("error", err.Error()))
 		return fmt.Errorf("begin transaction: %w", err)
 	}
 	defer func() {
 		if p := recover(); p != nil {
-			log.Printf("Panic during transaction, rolling back: %v", p)
+			slog.Error("Panic during transaction, rolling back", slog.Any("panic", p))
 			_ = tx.Rollback()
 			panic(p)
 		} else if err != nil {
-			log.Printf("Error detected, rolling back transaction: %v", err)
 			_ = tx.Rollback()
+			slog.Error("Transaction rolled back due to error", slog.String("error", err.Error()))
 		}
 	}()
 
@@ -371,20 +427,31 @@ func (r *videoRepo) BulkUpdateVideohashes(ctx context.Context, updates []*models
 		WHERE id = ?;
 	`)
 	if err != nil {
-		log.Printf("Error preparing update statement: %v", err)
+		slog.Error("Error preparing update statement", slog.String("error", err.Error()))
 		return fmt.Errorf("prepare statement: %w", err)
 	}
 	defer stmt.Close()
 
 	for _, vh := range updates {
+		if vh == nil {
+			slog.Warn("Skipping nil videohash record in updates")
+			continue
+		}
+
 		neighboursJSON, err := json.Marshal(vh.Neighbours)
 		if err != nil {
-			log.Printf("Error marshalling neighbours for videohash ID %d: %v", vh.ID, err)
-			_ = tx.Rollback()
+			slog.Error("Error marshalling neighbours", slog.Int64("videohashID", vh.ID), slog.String("error", err.Error()))
 			return fmt.Errorf("marshal neighbours for videohash ID %d: %w", vh.ID, err)
 		}
-		log.Printf("Updating videohash ID %d with hashType: %s, hashValue: %s, duration: %.2f, bucket: %d",
-			vh.ID, vh.HashType, vh.HashValue, vh.Duration, vh.Bucket)
+
+		slog.Debug("Updating videohash",
+			slog.Int64("videohashID", vh.ID),
+			slog.String("hashType", string(vh.HashType)),
+			slog.String("hashValue", vh.HashValue),
+			slog.Float64("duration", float64(vh.Duration)),
+			slog.Int("bucket", vh.Bucket),
+			slog.String("neighbours", string(neighboursJSON)),
+		)
 
 		_, err = stmt.ExecContext(ctx,
 			vh.HashType,
@@ -395,48 +462,47 @@ func (r *videoRepo) BulkUpdateVideohashes(ctx context.Context, updates []*models
 			vh.ID,
 		)
 		if err != nil {
-			log.Printf("Error updating videohash ID %d: %v", vh.ID, err)
-			_ = tx.Rollback()
+			slog.Error("Error updating videohash", slog.Int64("videohashID", vh.ID), slog.String("error", err.Error()))
 			return fmt.Errorf("update videohash ID %d: %w", vh.ID, err)
 		}
 	}
 
-	if commitErr := tx.Commit(); commitErr != nil {
-		log.Printf("Error committing transaction: %v", commitErr)
-		return fmt.Errorf("commit transaction: %w", commitErr)
+	if err := tx.Commit(); err != nil {
+		slog.Error("Error committing transaction", slog.String("error", err.Error()))
+		return fmt.Errorf("commit transaction: %w", err)
 	}
 
-	log.Println("Successfully updated videohash records.")
+	slog.Info("Successfully updated videohash records", slog.Int("count", len(updates)))
 	return nil
 }
 
 // getVideosByVideohashIDs returns all videos that reference any of the given videohash IDs.
-func (r *videoRepo) getVideosByVideohashIDs(ctx context.Context, hashIDs []int64) (map[int64][]*models.Video, error) {
-	if len(hashIDs) == 0 {
-		return make(map[int64][]*models.Video), nil
+// getVideohashesByIDs returns a map of videohashID -> *Videohash
+func (r *videoRepo) getVideohashesByIDs(ctx context.Context, ids []int64) (map[int64]*models.Videohash, error) {
+	if len(ids) == 0 {
+		return make(map[int64]*models.Videohash), nil
 	}
 
-	placeholders := strings.Repeat("?,", len(hashIDs))
-	placeholders = placeholders[:len(placeholders)-1]
+	placeholders := strings.Repeat("?,", len(ids))
+	placeholders = placeholders[:len(placeholders)-1] // trim trailing comma
 
-	// We fetch all videos referencing these hash IDs
 	query := fmt.Sprintf(`
-		SELECT *
-		FROM video
-		WHERE FK_video_videohash IN (%s);
-	`, placeholders)
+        SELECT id, hashType, hashValue, duration, neighbours, bucket
+        FROM videohash
+        WHERE id IN (%s)
+    `, placeholders)
 
-	var allVideos []*models.Video
-	if err := sqlscan.Select(ctx, r.db, &allVideos, query, utils.ToInterfaceSlice(hashIDs)...); err != nil {
-		return nil, fmt.Errorf("querying videos by videohash IDs: %w", err)
+	var allHashes []*models.Videohash
+	if err := sqlscan.Select(ctx, r.db, &allHashes, query, utils.ToInterfaceSlice(ids)...); err != nil {
+		return nil, fmt.Errorf("fetching videohashes by IDs: %w", err)
 	}
 
-	// Group the videos by their FK_video_videohash
-	result := make(map[int64][]*models.Video)
-	for _, vid := range allVideos {
-		result[vid.FKVideoVideohash] = append(result[vid.FKVideoVideohash], vid)
+	// Build a map from ID => Videohash
+	hashMap := make(map[int64]*models.Videohash)
+	for _, vh := range allHashes {
+		hashMap[vh.ID] = vh
 	}
-	return result, nil
+	return hashMap, nil
 }
 
 // getScreenshotsByVideohashIDs returns screenshots keyed by videohash ID.
@@ -539,4 +605,3 @@ func buildInsertQueryAndValues(v interface{}) ([]string, []string, []interface{}
 	}
 	return columns, placeholders, values, nil
 }
-

@@ -31,3 +31,4 @@ go.work.sum
 *.md
 *.json
 videos.db
+app.log

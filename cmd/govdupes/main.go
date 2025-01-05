@@ -7,215 +7,275 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/cespare/xxhash/v2"
+	_ "modernc.org/sqlite"
 
 	"govdupes/internal/config"
+	store "govdupes/internal/db"
 	"govdupes/internal/db/dbstore"
 	"govdupes/internal/db/sqlite"
 	"govdupes/internal/duplicate"
 	"govdupes/internal/filesystem"
+	"govdupes/internal/hash"
 	"govdupes/internal/models"
 	"govdupes/internal/videoprocessor"
 	"govdupes/internal/videoprocessor/ffprobe"
 	"govdupes/ui"
-
-	phash "govdupes/internal/hash"
-
-	_ "modernc.org/sqlite"
 )
 
 var (
-	wrongArgsMsg string = "Error, your input must include only one arg which contains the path to the filedirectory to scan."
-	logLevel     string = "error"
+	wrongArgsMsg = "Error, your input must include only one arg which contains the path to the filedirectory to scan."
+	logLevel     = "error"
 )
 
 func main() {
-	var config config.Config
-	config.ParseArgs()
+	var cfg config.Config
+	cfg.ParseArgs()
 
-	db := sqlite.InitDB(config.DatabasePath.String())
+	// Create and set up slog logger
+	log.Println(cfg.LogFilePath)
+	logger := config.SetupLogger(cfg.LogFilePath)
+	slog.SetDefault(logger)
+
+	db := sqlite.InitDB(cfg.DatabasePath.String())
 	defer db.Close()
 
 	videoStore := dbstore.NewVideoStore(db)
 	vp := videoprocessor.NewFFmpegInstance(logLevel)
 
-	videos := filesystem.SearchDirs(&config)
-	if len(videos) <= 1 {
-		log.Println("No files found in directory exiting!")
-	}
+	// 1) Gather all videos from DB
 	dbVideos, err := videoStore.GetAllVideos(context.Background())
 	if err != nil {
-		log.Fatalf("Error getting videos from data, err: %v\n", err)
-	}
-	videosNotInDB := reconcileVideosWithDB(videos, dbVideos)
-
-	validVideos := make([]*models.Video, 0, len(videosNotInDB))
-	for _, v := range videosNotInDB {
-		err := ffprobe.GetVideoInfo(v)
-		if err != nil {
-			v.Corrupted = true
-			log.Printf("Error getting video info, skipping file with path: %q, err: %v\n", v.Path, err)
-			continue
-		}
-
-		digest := xxhash.NewWithSeed(uint64(v.Size))
-		if err := CalculateXXHash(digest, v); err != nil {
-			v.XXHash = ""
-			continue
-		}
-		v.XXHash = strconv.FormatUint(digest.Sum64(), 10)
-
-		validVideos = append(validVideos, v)
+		slog.Error("Error getting videos from DB", slog.Any("error", err))
+		os.Exit(1) // equivalent to a Fatal
 	}
 
-	for _, v := range validVideos {
-		log.Println(v)
-		pHash, screenshots, err := phash.Create(vp, v)
-		if err != nil {
-			log.Printf("Error, trying to generate pHash, fileName: %q, err: %v", v.FileName, err)
-			continue
-		}
-		if strings.EqualFold(pHash.HashValue, "8000000000000000") || strings.EqualFold(pHash.HashValue, "0000000000000000") {
-			log.Printf("Skipping video: %q, phash is entirely one colour: %q", v.Path, pHash.HashValue)
+	// 2) Gather new files from the filesystem
+	fsVideos := filesystem.SearchDirs(&cfg)
+	if len(fsVideos) == 0 {
+		slog.Info("No files found in directory. Exiting!")
+		return
+	}
+
+	// 3) Filter out any paths that are already in DB (based on dev/inode or path)
+	videosNotInDB := reconcileVideosWithDB(fsVideos, dbVideos)
+	if len(videosNotInDB) != 0 {
+		// slog.Info("No new videos to process, exiting.")
+
+		validVideos := make([]*models.Video, 0, len(videosNotInDB))
+
+		// 4) Compute FFprobe info for each "new" video
+		for _, vid := range videosNotInDB {
+			if err := ffprobe.GetVideoInfo(vid); err != nil {
+				vid.Corrupted = true
+				slog.Warn("Skipping corrupted file",
+					slog.String("path", vid.Path),
+					slog.Any("error", err))
+				continue
+			}
+			validVideos = append(validVideos, vid)
 		}
 
-		if err := videoStore.CreateVideo(context.Background(), v, pHash, screenshots); err != nil {
-			log.Printf("FAILED to create video in DB, skipping video: %v", err)
-			continue
+		// Build DB lookups for device/inode or size/xxhash
+		deviceInodeToDBVideo := make(map[[2]uint64]*models.Video, len(dbVideos))
+		sizeHashToDBVideo := make(map[[2]string]*models.Video, len(dbVideos))
+		for _, v := range dbVideos {
+			keyDevIno := [2]uint64{v.Device, v.Inode}
+			deviceInodeToDBVideo[keyDevIno] = v
+
+			if v.Size > 0 && v.XXHash != "" {
+				keySizeHash := [2]string{strconv.FormatInt(v.Size, 10), v.XXHash}
+				sizeHashToDBVideo[keySizeHash] = v
+			}
 		}
-		log.Println(v)
+
+		// 5) Decide if a video matches an existing DB video or is truly new.
+		//    If it matches (hardlink or exact duplicate), reuse that video’s existing phash info.
+		var videosReuseHash []*models.Video
+		var vNotRelatedToDB []*models.Video
+
+		for _, vid := range validVideos {
+			// Check device+inode in DB
+			devInoKey := [2]uint64{vid.Device, vid.Inode}
+			if existingDBVid, ok := deviceInodeToDBVideo[devInoKey]; ok {
+				vid.FKVideoVideohash = existingDBVid.FKVideoVideohash
+				videosReuseHash = append(videosReuseHash, vid)
+				continue
+			}
+
+			// Check size+xxhash in DB
+			sizeHashKey := [2]string{strconv.FormatInt(vid.Size, 10), vid.XXHash}
+			if existingDBVid, ok := sizeHashToDBVideo[sizeHashKey]; ok {
+				vid.FKVideoVideohash = existingDBVid.FKVideoVideohash
+				videosReuseHash = append(videosReuseHash, vid)
+				continue
+			}
+
+			vNotRelatedToDB = append(vNotRelatedToDB, vid)
+		}
+
+		// 6) Among new videos not matching anything in DB, group them by dev/inode or size/xxhash
+		var videosToCreate [][]*models.Video
+		deviceInodeToIndex := make(map[[2]uint64]int)
+		sizeHashToIndex := make(map[[2]string]int)
+
+		for _, vid := range vNotRelatedToDB {
+			devInoKey := [2]uint64{vid.Device, vid.Inode}
+			if i, ok := deviceInodeToIndex[devInoKey]; ok {
+				videosToCreate[i] = append(videosToCreate[i], vid)
+				continue
+			}
+
+			sizeHashKey := [2]string{strconv.FormatInt(vid.Size, 10), vid.XXHash}
+			if i, ok := sizeHashToIndex[sizeHashKey]; ok {
+				videosToCreate[i] = append(videosToCreate[i], vid)
+				continue
+			}
+
+			vid.FKVideoVideohash = 0
+			index := len(videosToCreate)
+			deviceInodeToIndex[devInoKey] = index
+			sizeHashToIndex[sizeHashKey] = index
+			videosToCreate = append(videosToCreate, []*models.Video{vid})
+		}
+
+		// Also append those that matched an existing DB videohash
+		for _, v := range videosReuseHash {
+			videosToCreate = append(videosToCreate, []*models.Video{v})
+		}
+
+		slog.Info("Starting to generate pHashes!")
+		generatePHashes(videosToCreate, vp, videoStore)
+		slog.Info("Done generating pHashes!")
 	}
 
 	fVideos, err := videoStore.GetAllVideos(context.Background())
 	if err != nil {
-		log.Println(err)
+		slog.Error("Error retrieving all videos", slog.Any("error", err))
+		return
 	}
+	for _, vid := range fVideos {
+		slog.Info("Video details", "Path", vid.Path)
+	}
+
 	fHashes, err := videoStore.GetAllVideoHashes(context.Background())
 	if err != nil {
-		log.Println(err)
+		slog.Error("Error retrieving all video hashes", slog.Any("error", err))
+		return
 	}
+	for _, vhash := range fHashes {
+		slog.Info("Videohash", "vhash.ID", vhash.ID, "vhash.bucket", vhash.Bucket)
+	}
+
 	if len(fVideos) != len(fHashes) {
-		log.Fatalf("Error fVideos len: %d, fHashes:%d", len(fVideos), len(fHashes))
+		slog.Warn("Mismatch in number of videos and video hashes",
+			slog.Int("videosCount", len(fVideos)),
+			slog.Int("hashesCount", len(fHashes)))
 	}
 
-	for _, h := range fHashes {
-		log.Println("sneed")
-		log.Println(*h)
+	slog.Info("Starting to match hashes")
+	err = duplicate.FindVideoDuplicates(fHashes)
+	for _, vhash := range fHashes {
+		slog.Info("Videohash", "vhash.ID", vhash.ID, "vhash.bucket", vhash.Bucket)
 	}
-	for _, v := range fVideos {
-		log.Println("feed")
-		log.Println(*v)
-	}
-
-	log.Println("Starting to match hashes")
-	dupeVideoIndexes, dupeVideos, err := duplicate.FindVideoDuplicates(fHashes)
 	if err != nil {
-		log.Fatalf("Error trying to determine duplicates, err: %v", err)
+		slog.Error("Error determining duplicates", slog.Any("error", err))
+		os.Exit(1)
 	}
 
-	videoStore.BulkUpdateVideohashes(context.Background(), dupeVideos)
-
-	log.Println(dupeVideoIndexes)
-	log.Println("Printing duplicate video groups:")
-	for i := 0; i < len(dupeVideoIndexes); i++ {
-		log.Printf("Video group #%d", i)
-		for _, k := range dupeVideoIndexes[i] {
-			j := k - 1 // sqlite3 primary key auto increment start at 1
-			log.Printf("Filename: %q, path: %q", fVideos[j].FileName, fVideos[j].Path)
-		}
+	if err := videoStore.BulkUpdateVideohashes(context.Background(), fHashes); err != nil {
+		slog.Error("Error in BulkUpdateVideohashes", slog.Any("error", err))
 	}
 
 	duplicateVideoData, err := videoStore.GetDuplicateVideoData(context.Background())
 	if err != nil {
-		log.Println(err)
+		slog.Error("Error getting duplicate video data", slog.Any("error", err))
+		return
 	}
-	log.Println(len(duplicateVideoData))
+	slog.Info("Number of duplicate video groups", slog.Int("count", len(duplicateVideoData)))
+
+	// Finally, launch your UI
 	ui.CreateUI(duplicateVideoData)
 }
 
-func reconcileVideosWithDB(v []*models.Video, dbVideos []*models.Video) []*models.Video {
-	// map[video struct field]models.Video quickly check if video exists in DB
+// reconcileVideosWithDB returns a subset of 'videosFromFS' that are not already
+// in DB (based on path + device/inode/size checks).
+func reconcileVideosWithDB(videosFromFS []*models.Video, dbVideos []*models.Video) []*models.Video {
 	dbPathToVideo := make(map[string]models.Video, len(dbVideos))
-	videosToCalc := make([]*models.Video, 0, len(v))
-	for _, video := range dbVideos {
-		dbPathToVideo[video.Path] = *video
+	for _, dbv := range dbVideos {
+		dbPathToVideo[dbv.Path] = *dbv
 	}
 
-	for _, video := range v {
-		// check if videos path exists in db already
-		if match, exists := dbPathToVideo[video.Path]; exists {
-			if video.Size == match.Size && video.Inode == match.Inode && video.Device == match.Device {
-				log.Printf("Skipping video from filesearch found video in DB with the same: size1: %d = size2: %d, inode: %d=%d, device: %d=%d", video.Size, match.Size, video.Inode, match.Inode, video.Device, match.Device)
+	var results []*models.Video
+	for _, fsVid := range videosFromFS {
+		if match, exists := dbPathToVideo[fsVid.Path]; exists {
+			sameInodeDevice := (fsVid.Inode == match.Inode) && (fsVid.Device == match.Device)
+			sameSize := (fsVid.Size == match.Size)
+			if sameInodeDevice && sameSize {
+				slog.Info("Skipping filesystem video already in DB",
+					slog.String("path", fsVid.Path))
 				continue
 			}
 		}
-		videosToCalc = append(videosToCalc, video)
+		results = append(results, fsVid)
 	}
-	return videosToCalc
+	return results
 }
 
+// CalculateXXHash reads chunks from the video file and updates the hash digest
 func CalculateXXHash(h *xxhash.Digest, v *models.Video) error {
 	f, err := os.Open(v.Path)
 	if err != nil {
-		return fmt.Errorf("error opening file, err: %v", err)
+		return fmt.Errorf("error opening file: %v", err)
 	}
+	defer f.Close()
 
-	// 1024 bytes * 64 (2^16)
 	offset := int64(0)
-	bufferSize := 65536
-
+	const bufferSize = 65536
 	buf := make([]byte, bufferSize)
 	eof := false
+
 	for {
-		n, err := f.ReadAt(buf, offset)
-		if errors.Is(err, io.EOF) {
+		n, readErr := f.ReadAt(buf, offset)
+		if errors.Is(readErr, io.EOF) {
 			buf = buf[:n]
 			eof = true
-		} else if err != nil {
-			return fmt.Errorf("error reading from file into buffer, err: %v", err)
+		} else if readErr != nil {
+			return fmt.Errorf("error reading file: %v", readErr)
 		}
-
-		// always returns len(b), nil
 		h.Write(buf)
-		/*if err != nil {
-			return nil, fmt.Errorf("error writing buffer contents to hash, err: %v", err)
-		} else if w != len(buf) {
-			return nil, fmt.Errorf("error writing the contents of the buffer, len(buf): %d != %d bytes written", len(buf), w)
-		}*/
 		if eof {
 			break
 		}
-		offset += int64(bufferSize) + 1
+		offset += int64(bufferSize)
 	}
 	return nil
 }
 
+// Optional: Example function to write duplicates to JSON if you need it
 func writeDuplicatesToJSON(dupeVideoIndexes [][]int, fVideos []*models.Video, outputPath string) error {
-	// Create a structure to hold duplicate groups
 	duplicateGroups := make([][]models.Video, len(dupeVideoIndexes))
-
-	// Populate the structure
 	for i, group := range dupeVideoIndexes {
 		duplicateGroups[i] = make([]models.Video, len(group))
 		for j, index := range group {
 			if index < 1 || index > len(fVideos) {
-				log.Printf("Invalid index %d in group %d, skipping...", index, i)
+				slog.Warn("Invalid index in group, skipping...",
+					slog.Int("index", index),
+					slog.Int("group", i))
 				continue
 			}
-			duplicateGroups[i][j] = *fVideos[index-1] // Convert 1-based to 0-based index
+			duplicateGroups[i][j] = *fVideos[index-1] // convert 1-based to 0-based index
 		}
 	}
-
-	// Wrap groups in a top-level structure
-	data := map[string]interface{}{
+	data := map[string]any{
 		"duplicateGroups": duplicateGroups,
 	}
-
-	// Create and write to the JSON file
 	file, err := os.Create(outputPath)
 	if err != nil {
 		return err
@@ -223,30 +283,166 @@ func writeDuplicatesToJSON(dupeVideoIndexes [][]int, fVideos []*models.Video, ou
 	defer file.Close()
 
 	encoder := json.NewEncoder(file)
-	encoder.SetIndent("", "  ") // Pretty-print JSON
+	encoder.SetIndent("", " ")
 	if err := encoder.Encode(data); err != nil {
 		return err
 	}
-
-	log.Printf("Duplicate groups successfully written to %s", outputPath)
+	slog.Info("Duplicate groups successfully written to JSON", slog.String("output", outputPath))
 	return nil
 }
 
-/*
-else if matches, e := dbSizeToVideoSlice[video.Size]; e {
-			foundAMatch := false
-			for _, m := range matches {
-				h.ResetWithSeed(uint64(video.Size))
-				CalculateXXHash(h, video)
-				hStr := strconv.FormatUint(h.Sum64(), 10)
-				if hStr == m.XXHash {
-					log.Printf("Skipping video from filsearch found video in DB with the same: XXHash1: %q = %q XXHash2", hStr, m.XXHash)
-					foundAMatch = true
-				}
-				video.XXHash = hStr
-			}
-			if foundAMatch {
+// Helper to find matches by device+inode or size+xxhash
+func findMatchingVideo(
+	deviceInodeKey [2]uint64,
+	sizeHashKey [2]string,
+	deviceInodeMap map[[2]uint64]*models.Video,
+	sizeHashMap map[[2]string]*models.Video,
+) (*models.Video, bool) {
+	if vid, ok := deviceInodeMap[deviceInodeKey]; ok {
+		return vid, true
+	}
+	if vid, ok := sizeHashMap[sizeHashKey]; ok {
+		return vid, true
+	}
+	return nil, false
+}
+
+func generatePHashes(videosToCreate [][]*models.Video, vp *videoprocessor.FFmpegWrapper, videoStore store.VideoStore) {
+	for _, group := range videosToCreate {
+		slog.Debug("Processing group", slog.Int("groupSize", len(group)))
+
+		// If the first in the group already has a hash, reuse it
+		if group[0].FKVideoVideohash != 0 {
+			continue
+		}
+
+		pHash, screenshots, err := hash.Create(vp, group[0])
+		if err != nil {
+			slog.Warn("Skipping pHash generation",
+				slog.String("path", group[0].Path),
+				slog.Any("error", err))
+			continue
+		}
+
+		// If the phash is a solid color, skip
+		if strings.EqualFold(pHash.HashValue, "8000000000000000") ||
+			strings.EqualFold(pHash.HashValue, "0000000000000000") {
+			slog.Warn("Skipping video with solid color pHash",
+				slog.String("path", group[0].Path),
+				slog.String("pHash", pHash.HashValue))
+			continue
+		}
+
+		// Save the video and associated data
+		for _, video := range group {
+			if err := videoStore.CreateVideo(context.Background(), video, pHash, screenshots); err != nil {
+				slog.Error("FAILED to create video in DB",
+					slog.String("path", video.Path),
+					slog.Any("error", err))
 				continue
 			}
+			slog.Info("Created new video with pHash",
+				slog.String("path", video.Path),
+				slog.String("pHash", pHash.HashValue))
 		}
-*/
+	}
+}
+
+// Example of a parallel pHash generator
+func generatePHashesParallel(videosToCreate [][]*models.Video, vp *videoprocessor.FFmpegWrapper, videoStore store.VideoStore) {
+	const workerCount = 4
+	videoChan := make(chan []*models.Video, len(videosToCreate))
+	var wg sync.WaitGroup
+
+	// Worker goroutines
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for group := range videoChan {
+				if group[0].FKVideoVideohash != 0 {
+					continue
+				}
+
+				pHash, screenshots, err := hash.Create(vp, group[0])
+				if err != nil {
+					slog.Warn("Skipping pHash generation",
+						slog.String("path", group[0].Path),
+						slog.Any("error", err))
+					continue
+				}
+
+				if strings.EqualFold(pHash.HashValue, "8000000000000000") ||
+					strings.EqualFold(pHash.HashValue, "0000000000000000") {
+					slog.Warn("Skipping video with solid color pHash",
+						slog.String("path", group[0].Path),
+						slog.String("pHash", pHash.HashValue))
+					continue
+				}
+
+				for _, video := range group {
+					if err := videoStore.CreateVideo(context.Background(), video, pHash, screenshots); err != nil {
+						slog.Error("FAILED to create video in DB",
+							slog.String("path", video.Path),
+							slog.Any("error", err))
+						continue
+					}
+					slog.Info("Created new video with pHash",
+						slog.String("path", video.Path),
+						slog.String("pHash", pHash.HashValue))
+				}
+			}
+		}()
+	}
+
+	// Send video groups to the channel
+	for _, group := range videosToCreate {
+		videoChan <- group
+	}
+	close(videoChan)
+
+	// Wait for all workers to finish
+	wg.Wait()
+	slog.Info("All pHash generation workers completed.")
+}
+
+// Example: parallel XXHash generation. Adjust concurrency and error handling to taste.
+func computeXXHashes(videos []*models.Video) []*models.Video {
+	var wg sync.WaitGroup
+	videoChan := make(chan *models.Video, len(videos))
+	validVideosChan := make(chan *models.Video, len(videos))
+
+	const workerCount = 16
+
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for vid := range videoChan {
+				digest := xxhash.NewWithSeed(uint64(vid.Size))
+				if err := CalculateXXHash(digest, vid); err != nil {
+					slog.Error("XXHash failure",
+						slog.String("path", vid.Path),
+						slog.Any("error", err))
+					continue
+				}
+				vid.XXHash = strconv.FormatUint(digest.Sum64(), 10)
+				validVideosChan <- vid
+			}
+		}()
+	}
+
+	for _, vid := range videos {
+		videoChan <- vid
+	}
+	close(videoChan)
+
+	wg.Wait()
+	close(validVideosChan)
+
+	var validVideos []*models.Video
+	for vid := range validVideosChan {
+		validVideos = append(validVideos, vid)
+	}
+	return validVideos
+}
