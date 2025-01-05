@@ -46,6 +46,7 @@ type Config struct {
 	AbsPath             bool
 	FollowSymbolicLinks bool
 	SkipSymbolicLinks   bool
+	SilentFFmpeg        bool
 	LogFilePath         string
 }
 
@@ -70,6 +71,7 @@ func (c *Config) ParseArgs() {
 
 	fileSizeGiB := flag.Float64("fs", 0, "Max file size in GiB (default 0).")
 	c.SaveSC = *flag.Bool("sc", true, "Flag to save screenshots, T/F (default False).")
+	c.SilentFFmpeg = *flag.Bool("sf", true, "Flag that determines if FFmpeg is silent or not, T/F (default True).")
 	c.FollowSymbolicLinks = *flag.Bool("fsl", true, "Follow symbolic links, T/F (default False).")
 	c.LogFilePath = *flag.String("log", "app.log", "Path to log file (default = app.log).")
 
@@ -142,4 +144,3 @@ func SetupLogger(logFilePath string) *slog.Logger {
 
 	return slog.New(slog.NewJSONHandler(multiWriter, opts))
 }
-

@@ -29,10 +29,7 @@ import (
 	"govdupes/ui"
 )
 
-var (
-	wrongArgsMsg = "Error, your input must include only one arg which contains the path to the filedirectory to scan."
-	logLevel     = "error"
-)
+var wrongArgsMsg = "Error, your input must include only one arg which contains the path to the filedirectory to scan."
 
 func main() {
 	var cfg config.Config
@@ -47,7 +44,7 @@ func main() {
 	defer db.Close()
 
 	videoStore := dbstore.NewVideoStore(db)
-	vp := videoprocessor.NewFFmpegInstance(logLevel)
+	vp := videoprocessor.NewFFmpegInstance(cfg)
 
 	// 1) Gather all videos from DB
 	dbVideos, err := videoStore.GetAllVideos(context.Background())

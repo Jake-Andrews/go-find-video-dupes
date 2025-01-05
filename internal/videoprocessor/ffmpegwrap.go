@@ -6,34 +6,34 @@ import (
 	"log/slog"
 	"os"
 
+	"govdupes/internal/config"
 	"govdupes/internal/models"
 
 	ffmpeg "github.com/u2takey/ffmpeg-go"
 )
 
 type FFmpegWrapper struct {
-	logLevel string
+	silent bool
 }
 
-func NewFFmpegInstance(logLevel string) *FFmpegWrapper {
-	if logLevel == "" {
-		logLevel = "verbose"
-	}
-	return &FFmpegWrapper{logLevel: logLevel}
+func NewFFmpegInstance(cfg config.Config) *FFmpegWrapper {
+	return &FFmpegWrapper{silent: cfg.SilentFFmpeg}
 }
 
 func (f *FFmpegWrapper) ScreenshotAtTime(filePath string, scWriter io.Writer, timeStamp string) error {
 	width := models.Width
 	height := models.Height
 
-	slog.Info("Creating screenshot",
-		slog.Int("Width", width),
-		slog.Int("Height", height),
-		slog.String("Timestamp", timeStamp),
-		slog.String("FilePath", filePath))
+	/*
+		slog.Info("Creating screenshot",
+			slog.Int("Width", width),
+			slog.Int("Height", height),
+			slog.String("Timestamp", timeStamp),
+			slog.String("FilePath", filePath))
+	*/
 
 	err := ffmpeg.
-		Input(filePath, ffmpeg.KwArgs{"ss": timeStamp, "hide_banner": "", "loglevel": f.logLevel}).
+		Input(filePath, ffmpeg.KwArgs{"ss": timeStamp, "hide_banner": "", "nostats": ""}).
 		Output("pipe:",
 			ffmpeg.KwArgs{
 				"vcodec":  "bmp",
@@ -42,7 +42,7 @@ func (f *FFmpegWrapper) ScreenshotAtTime(filePath string, scWriter io.Writer, ti
 				"vf":      fmt.Sprintf("scale=%d:%d", width, height),
 			}).
 		WithOutput(scWriter).
-		ErrorToStdOut().
+		Silent(f.silent).
 		Run()
 	if err != nil {
 		slog.Error("Error creating screenshot", slog.Any("error", err))

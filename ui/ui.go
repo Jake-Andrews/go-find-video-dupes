@@ -123,6 +123,23 @@ func deleteVideosFromDisk(duplicatesList *DuplicatesList, videoData2d [][]*model
 }
 
 func deleteVideosFromList(duplicatesList *DuplicatesList, videoData2d [][]*models.VideoData) {
+	duplicatesList.mutex.Lock()
+	defer duplicatesList.mutex.Unlock()
+	selectedIDs := make(map[int64]struct{})
+	for _, item := range duplicatesList.items {
+		if item.Selected && item.VideoData != nil {
+			selectedIDs[item.VideoData.Video.ID] = struct{}{}
+		}
+	}
+	for i := range videoData2d {
+		filteredRow := videoData2d[i][:0]
+		for _, videoData := range videoData2d[i] {
+			if _, found := selectedIDs[videoData.Video.ID]; !found {
+				filteredRow = append(filteredRow, videoData)
+			}
+		}
+		videoData2d[i] = filteredRow
+	}
 }
 
 func selectIdentical(duplicatesList *DuplicatesList) {
