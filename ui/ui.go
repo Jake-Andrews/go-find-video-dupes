@@ -38,14 +38,15 @@ func CreateUI(videoData [][]*models.VideoData) {
 
 	themeTab := buildThemeTab(a)
 	sortSelectTab := buildSortSelectDeleteTab(duplicatesListWidget, videoData)
-	settingsTab, filterForm := buildSettingsTab(duplicatesListWidget, originalVideoData)
+	configTab, filterForm, _ := buildConfigTab(duplicatesListWidget, originalVideoData)
 
 	// Tabs section
 	tabs := container.NewAppTabs(
+		// container.NewTabItem("Search", searchTab),
 		container.NewTabItem("Duplicates", duplicatesTab),
 		container.NewTabItem("Theme", themeTab),
 		container.NewTabItem("Sort/Select/Delete", sortSelectTab),
-		container.NewTabItem("Settings", settingsTab),
+		container.NewTabItem("Settings", configTab),
 	)
 	tabs.SetTabLocation(container.TabLocationTop)
 
@@ -72,47 +73,6 @@ func buildThemeTab(a fyne.App) fyne.CanvasObject {
 			a.Settings().SetTheme(&forcedVariant{Theme: theme.DefaultTheme(), isDark: false})
 		}),
 	)
-}
-
-func buildSettingsTab(duplicatesListWidget *DuplicatesList, originalVideoData [][]*models.VideoData) (fyne.CanvasObject, *fyne.Container) {
-	filterEntry := widget.NewEntry()
-	filterEntry.SetPlaceHolder("Enter path/file search...")
-
-	filterButton := widget.NewButton("Apply", func() {
-		slog.Info("Filter applied", slog.String("filter", filterEntry.Text))
-
-		// Parse the user filter string into a search query
-		query := parseSearchQuery(filterEntry.Text)
-
-		// Filter the data based on the query
-		filteredData := applyFilter(originalVideoData, query)
-
-		// Rebind to the duplicates list
-		duplicatesListWidget.SetData(filteredData)
-	})
-
-	// Create a form layout for the filter box
-	filterForm := container.NewVBox(
-		widget.NewLabel("Filter:"),
-		filterEntry,
-		filterButton,
-	)
-
-	filterForm.Hide()
-	filterVisible := false
-
-	settingsContent := container.NewVBox(
-		widget.NewCheck("Show Filter Box", func(checked bool) {
-			filterVisible = checked
-			if filterVisible {
-				filterForm.Show()
-			} else {
-				filterForm.Hide()
-			}
-			filterForm.Refresh()
-		}),
-	)
-	return settingsContent, filterForm
 }
 
 type forcedVariant struct {
