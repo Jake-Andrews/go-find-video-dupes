@@ -35,7 +35,6 @@ func main() {
 	var cfg config.Config
 	cfg.ParseArgs()
 
-	// Create and set up slog logger
 	log.Println(cfg.LogFilePath)
 	logger := config.SetupLogger(cfg.LogFilePath)
 	slog.SetDefault(logger)
@@ -46,28 +45,24 @@ func main() {
 	videoStore := dbstore.NewVideoStore(db)
 	vp := videoprocessor.NewFFmpegInstance(cfg)
 
-	// 1) Gather all videos from DB
 	dbVideos, err := videoStore.GetAllVideos(context.Background())
 	if err != nil {
 		slog.Error("Error getting videos from DB", slog.Any("error", err))
-		os.Exit(1) // equivalent to a Fatal
+		os.Exit(1)
 	}
 
-	// 2) Gather new files from the filesystem
 	fsVideos := filesystem.SearchDirs(&cfg)
 	if len(fsVideos) == 0 {
 		slog.Info("No files found in directory. Exiting!")
 		return
 	}
 
-	// 3) Filter out any paths that are already in DB (based on dev/inode or path)
+	// Filter out any paths that are already in DB (based on dev/inode or path)
 	videosNotInDB := reconcileVideosWithDB(fsVideos, dbVideos)
 	if len(videosNotInDB) != 0 {
-		// slog.Info("No new videos to process, exiting.")
 
 		validVideos := make([]*models.Video, 0, len(videosNotInDB))
-
-		// 4) Compute FFprobe info for each "new" video
+		// Compute FFprobe info for each "new" video
 		for _, vid := range videosNotInDB {
 			if err := ffprobe.GetVideoInfo(vid); err != nil {
 				vid.Corrupted = true
@@ -92,7 +87,7 @@ func main() {
 			}
 		}
 
-		// 5) Decide if a video matches an existing DB video or is truly new.
+		// Decide if a video matches an existing DB video or is truly new.
 		//    If it matches (hardlink or exact duplicate), reuse that video’s existing phash info.
 		var videosReuseHash []*models.Video
 		var vNotRelatedToDB []*models.Video

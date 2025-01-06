@@ -23,7 +23,9 @@ func CreateUI(videoData [][]*models.VideoData) {
 	slog.Info("Starting CreateUI")
 
 	a := app.New()
-	slog.Info("Fyne app initialized")
+
+	// copy of the original data so we can re-filter repeatedly hacky
+	originalVideoData := videoData
 
 	duplicatesListWidget := NewDuplicatesList(videoData)
 	if duplicatesListWidget == nil {
@@ -31,31 +33,36 @@ func CreateUI(videoData [][]*models.VideoData) {
 		os.Exit(1)
 	}
 
-	scroll := container.NewVScroll(duplicatesListWidget)
-	scroll.SetMinSize(fyne.NewSize(1200, 768))
+	duplicatesTab := container.NewVScroll(duplicatesListWidget)
+	duplicatesTab.SetMinSize(fyne.NewSize(1200, 768))
 
-	duplicatesTab := scroll
 	themeTab := buildThemeTab(a)
 	sortSelectTab := buildSortSelectDeleteTab(duplicatesListWidget, videoData)
+	settingsTab, filterForm := buildSettingsTab(duplicatesListWidget, originalVideoData)
 
+	// Tabs section
 	tabs := container.NewAppTabs(
 		container.NewTabItem("Duplicates", duplicatesTab),
 		container.NewTabItem("Theme", themeTab),
 		container.NewTabItem("Sort/Select/Delete", sortSelectTab),
+		container.NewTabItem("Settings", settingsTab),
 	)
 	tabs.SetTabLocation(container.TabLocationTop)
 
-	slog.Info("Creating main application window")
-	window := a.NewWindow("govdupes")
-	window.SetContent(tabs)
-	window.Resize(fyne.NewSize(1300, 900))
+	// Main content including tabs and filter box
+	mainContent := container.NewVBox(
+		tabs,
+		filterForm,
+	)
 
-	slog.Info("Showing application window")
+	// Main window setup
+	window := a.NewWindow("govdupes")
+	window.SetContent(mainContent)
+	window.SetMaster()
+	window.Resize(fyne.NewSize(1300, 900))
 	window.ShowAndRun()
 }
 
-// buildThemeTab is a simple tab that lets the user switch
-// between dark/light themes.
 func buildThemeTab(a fyne.App) fyne.CanvasObject {
 	return container.NewGridWithColumns(2,
 		widget.NewButton("Dark", func() {
@@ -65,6 +72,48 @@ func buildThemeTab(a fyne.App) fyne.CanvasObject {
 			a.Settings().SetTheme(&forcedVariant{Theme: theme.DefaultTheme(), isDark: false})
 		}),
 	)
+}
+
+func buildSettingsTab(duplicatesListWidget *DuplicatesList, originalVideoData [][]*models.VideoData) (fyne.CanvasObject, *fyne.Container) {
+	filterEntry := widget.NewEntry()
+	filterEntry.SetPlaceHolder("Enter path/file search...")
+
+	filterButton := widget.NewButton("Apply", func() {
+		slog.Info("Filter applied", slog.String("filter", filterEntry.Text))
+
+		// Parse the user filter string into a search query
+		query := parseSearchQuery(filterEntry.Text)
+
+		// Filter the data based on the query
+		filteredData := applyFilter(originalVideoData, query)
+
+		// Rebind to the duplicates list
+		duplicatesListWidget.SetData(filteredData)
+	})
+
+	// Create a form layout for the filter box
+	filterForm := container.NewVBox( // Corrected to use VBox for alignment
+		widget.NewLabel("Filter:"),
+		filterEntry,
+		filterButton,
+	)
+
+	filterForm.Hide() // Initially hidden
+	filterVisible := false
+
+	// Settings tab content
+	settingsContent := container.NewVBox(
+		widget.NewCheck("Show Filter Box", func(checked bool) {
+			filterVisible = checked
+			if filterVisible {
+				filterForm.Show()
+			} else {
+				filterForm.Hide()
+			}
+			filterForm.Refresh()
+		}),
+	)
+	return settingsContent, filterForm
 }
 
 // forcedVariant forces dark or light theme
@@ -78,6 +127,141 @@ func (f *forcedVariant) Color(n fyne.ThemeColorName, _ fyne.ThemeVariant) color.
 		return f.Theme.Color(n, theme.VariantDark)
 	}
 	return f.Theme.Color(n, theme.VariantLight)
+}
+
+func buildSortSelectDeleteTab(duplicatesList *DuplicatesList, videoData [][]*models.VideoData) fyne.CanvasObject {
+	// HIDE
+
+	// HARDLINK
+	hardlinkLabel := widget.NewLabel("Hardlink selected videos to first video in group. Need 2+ videos selected per group.")
+	hardlinkButton := widget.NewButton("Hardlink", func() {
+		slog.Info("Hardlink button pressed")
+		hardlinkVideos(duplicatesList, videoData)
+		// Remove selected videos from the list
+		deleteVideosFromList(duplicatesList, videoData)
+		duplicatesList.SetData(videoData)
+	})
+
+	// DELETE
+	deleteOptions := []string{"From list", "From list & DB", "From disk"}
+	deleteLabel := widget.NewLabel("Delete selected")
+	deleteDropdown := widget.NewSelect(deleteOptions, nil)
+	deleteDropdown.PlaceHolder = "Select an option"
+
+	deleteButton := widget.NewButton("Delete", func() {
+		if deleteDropdown.Selected == "" {
+			slog.Warn("No delete option selected")
+			return
+		}
+
+		switch deleteDropdown.Selected {
+		case "From list":
+			deleteVideosFromList(duplicatesList, videoData)
+			slog.Info("Deleted from list")
+		case "From list & DB":
+			slog.Info("Deleted from list & database")
+		case "From disk":
+			slog.Info("Deleted from disk")
+			// Add a modal here
+			deleteVideosFromDisk(duplicatesList, videoData)
+		}
+
+		duplicatesList.SetData(videoData)
+	})
+
+	// SELECT
+	selectOptions := []string{"Select identical except path/name", "Select all but the largest", "Select all but the smallest", "Select all but the newest", "Select all but the oldest", "Select all but the highest bitrate", "Select all symbolic links", "Select all"}
+	selectLabel := widget.NewLabel("Select")
+	selectDropdown := widget.NewSelect(selectOptions, nil)
+	selectDropdown.PlaceHolder = "Select an option"
+	selectButton := widget.NewButton("Select", func() {
+		if selectDropdown.Selected == "" {
+			return
+		}
+
+		switch selectDropdown.Selected {
+		case "Select identical except path/name":
+			selectIdentical(duplicatesList)
+		case "Select all but the largest":
+			selectAllButLargest(duplicatesList)
+		case "Select all but the smallest":
+			selectAllButSmallest(duplicatesList)
+		case "Select all but the newest":
+			selectAllButNewest(duplicatesList)
+		case "Select all but the oldest":
+			selectAllButOldest(duplicatesList)
+		case "Select all but the highest bitrate":
+			selectAllButHighestBitrate(duplicatesList)
+		case "Select all symbolic links":
+			selectAllSymbolicLinks(duplicatesList)
+		case "Select all":
+			selectAllVideos(duplicatesList)
+		}
+		duplicatesList.Refresh()
+	})
+
+	// SORT
+	sortOptions := []string{"Size", "Bitrate", "Resolution", "Group Size", "Total Videos"}
+	sortLabel := widget.NewLabel("Sort")
+	dropdown := widget.NewSelect(sortOptions, nil)
+	dropdown.PlaceHolder = "Select an option"
+
+	sortOrder := map[string]bool{
+		"Size":                true, // true = ascending, false = descending
+		"Bitrate":             true,
+		"Resolution":          true,
+		"(Group) Size":        true,
+		"(Group) Video Count": true,
+	}
+
+	sortButton := widget.NewButton("Sort", func() {
+		if dropdown.Selected == "" {
+			return
+		}
+
+		switch dropdown.Selected {
+		case "Size":
+			if sortOrder["Size"] {
+				sortVideosBySize(videoData, true)
+			} else {
+				sortVideosBySize(videoData, false)
+			}
+			sortOrder["Size"] = !sortOrder["Size"]
+		case "Bitrate":
+			if sortOrder["Bitrate"] {
+				sortVideosByBitrate(videoData, true)
+			} else {
+				sortVideosByBitrate(videoData, false)
+			}
+			sortOrder["Bitrate"] = !sortOrder["Bitrate"]
+		case "Resolution":
+			if sortOrder["Resolution"] {
+				sortVideosByResolution(videoData, true)
+			} else {
+				sortVideosByResolution(videoData, false)
+			}
+			sortOrder["Resolution"] = !sortOrder["Resolution"]
+		case "Group Size":
+			if sortOrder["(Group) Size"] {
+				sortVideosByGroupSize(videoData, true)
+			} else {
+				sortVideosByGroupSize(videoData, false)
+			}
+			sortOrder["(Group) Size"] = !sortOrder["(Group) Size"]
+		case "Total Videos":
+			if sortOrder["(Group) Video Count"] {
+				sortVideosByTotalVideos(videoData, true)
+			} else {
+				sortVideosByTotalVideos(videoData, false)
+			}
+			sortOrder["(Group) Video Count"] = !sortOrder["(Group) Video Count"]
+		}
+
+		duplicatesList.SetData(videoData)
+	})
+
+	content := container.NewVBox(sortLabel, dropdown, sortButton, deleteLabel, deleteDropdown, deleteButton, selectLabel, selectDropdown, selectButton, hardlinkLabel, hardlinkButton)
+	return content
 }
 
 // Sort by size
@@ -460,141 +644,6 @@ func selectAllVideos(duplicatesList *DuplicatesList) {
 	}
 }
 
-func buildSortSelectDeleteTab(duplicatesList *DuplicatesList, videoData [][]*models.VideoData) fyne.CanvasObject {
-	// HIDE
-
-	// HARDLINK
-	hardlinkLabel := widget.NewLabel("Hardlink selected videos to first video in group. Need 2+ videos selected per group.")
-	hardlinkButton := widget.NewButton("Hardlink", func() {
-		slog.Info("Hardlink button pressed")
-		hardlinkVideos(duplicatesList, videoData)
-		// Remove selected videos from the list
-		deleteVideosFromList(duplicatesList, videoData)
-		duplicatesList.SetData(videoData)
-	})
-
-	// DELETE
-	deleteOptions := []string{"From list", "From list & DB", "From disk"}
-	deleteLabel := widget.NewLabel("Delete selected")
-	deleteDropdown := widget.NewSelect(deleteOptions, nil)
-	deleteDropdown.PlaceHolder = "Select an option"
-
-	deleteButton := widget.NewButton("Delete", func() {
-		if deleteDropdown.Selected == "" {
-			slog.Warn("No delete option selected")
-			return
-		}
-
-		switch deleteDropdown.Selected {
-		case "From list":
-			deleteVideosFromList(duplicatesList, videoData)
-			slog.Info("Deleted from list")
-		case "From list & DB":
-			slog.Info("Deleted from list & database")
-		case "From disk":
-			slog.Info("Deleted from disk")
-			// Add a modal here
-			deleteVideosFromDisk(duplicatesList, videoData)
-		}
-
-		duplicatesList.SetData(videoData)
-	})
-
-	// SELECT
-	selectOptions := []string{"Select identical except path/name", "Select all but the largest", "Select all but the smallest", "Select all but the newest", "Select all but the oldest", "Select all but the highest bitrate", "Select all symbolic links", "Select all"}
-	selectLabel := widget.NewLabel("Select")
-	selectDropdown := widget.NewSelect(selectOptions, nil)
-	selectDropdown.PlaceHolder = "Select an option"
-	selectButton := widget.NewButton("Select", func() {
-		if selectDropdown.Selected == "" {
-			return
-		}
-
-		switch selectDropdown.Selected {
-		case "Select identical except path/name":
-			selectIdentical(duplicatesList)
-		case "Select all but the largest":
-			selectAllButLargest(duplicatesList)
-		case "Select all but the smallest":
-			selectAllButSmallest(duplicatesList)
-		case "Select all but the newest":
-			selectAllButNewest(duplicatesList)
-		case "Select all but the oldest":
-			selectAllButOldest(duplicatesList)
-		case "Select all but the highest bitrate":
-			selectAllButHighestBitrate(duplicatesList)
-		case "Select all symbolic links":
-			selectAllSymbolicLinks(duplicatesList)
-		case "Select all":
-			selectAllVideos(duplicatesList)
-		}
-		duplicatesList.Refresh()
-	})
-
-	// SORT
-	sortOptions := []string{"Size", "Bitrate", "Resolution", "Group Size", "Total Videos"}
-	sortLabel := widget.NewLabel("Sort")
-	dropdown := widget.NewSelect(sortOptions, nil)
-	dropdown.PlaceHolder = "Select an option"
-
-	sortOrder := map[string]bool{
-		"Size":                true, // true = ascending, false = descending
-		"Bitrate":             true,
-		"Resolution":          true,
-		"(Group) Size":        true,
-		"(Group) Video Count": true,
-	}
-
-	sortButton := widget.NewButton("Sort", func() {
-		if dropdown.Selected == "" {
-			return
-		}
-
-		switch dropdown.Selected {
-		case "Size":
-			if sortOrder["Size"] {
-				sortVideosBySize(videoData, true)
-			} else {
-				sortVideosBySize(videoData, false)
-			}
-			sortOrder["Size"] = !sortOrder["Size"]
-		case "Bitrate":
-			if sortOrder["Bitrate"] {
-				sortVideosByBitrate(videoData, true)
-			} else {
-				sortVideosByBitrate(videoData, false)
-			}
-			sortOrder["Bitrate"] = !sortOrder["Bitrate"]
-		case "Resolution":
-			if sortOrder["Resolution"] {
-				sortVideosByResolution(videoData, true)
-			} else {
-				sortVideosByResolution(videoData, false)
-			}
-			sortOrder["Resolution"] = !sortOrder["Resolution"]
-		case "Group Size":
-			if sortOrder["(Group) Size"] {
-				sortVideosByGroupSize(videoData, true)
-			} else {
-				sortVideosByGroupSize(videoData, false)
-			}
-			sortOrder["(Group) Size"] = !sortOrder["(Group) Size"]
-		case "Total Videos":
-			if sortOrder["(Group) Video Count"] {
-				sortVideosByTotalVideos(videoData, true)
-			} else {
-				sortVideosByTotalVideos(videoData, false)
-			}
-			sortOrder["(Group) Video Count"] = !sortOrder["(Group) Video Count"]
-		}
-
-		duplicatesList.SetData(videoData)
-	})
-
-	content := container.NewVBox(sortLabel, dropdown, sortButton, deleteLabel, deleteDropdown, deleteButton, selectLabel, selectDropdown, selectButton, hardlinkLabel, hardlinkButton)
-	return content
-}
-
 func hardlinkVideos(duplicatesList *DuplicatesList, videoData2d [][]*models.VideoData) {
 	slog.Info("Starting hardlinkVideos function")
 
@@ -708,3 +757,7 @@ func sortVideosByTotalVideos(videoData [][]*models.VideoData, ascending bool) {
 		return countVideos(videoData[i]) > countVideos(videoData[j])
 	})
 }
+
+//func makeMenu(a fyne.app, w fyne.Window) *fyne.MainMenu {
+//
+//}

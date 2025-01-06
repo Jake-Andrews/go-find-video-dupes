@@ -4,6 +4,7 @@ package ui
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"fyne.io/fyne/v2"
@@ -13,6 +14,7 @@ import (
 )
 
 // duplicateListItem represents header rows or a video row
+// duplicateListItem represents header rows or a video row
 type duplicateListItem struct {
 	IsColumnsHeader bool
 	IsGroupHeader   bool
@@ -21,6 +23,9 @@ type duplicateListItem struct {
 	HeaderText string
 	VideoData  *models.VideoData
 	Selected   bool
+
+	// New field: true if this row should be hidden due to filter
+	Hidden bool
 }
 
 // DuplicatesList displays videos in duplicate groups, with a single header row at the top.
@@ -46,15 +51,17 @@ func NewDuplicatesList(videoData [][]*models.VideoData) *DuplicatesList {
 
 	// Build the widget.List
 	dl.list = widget.NewList(
+		// 1) Return how many are visible
 		func() int {
 			dl.mutex.RLock()
 			defer dl.mutex.RUnlock()
-			return len(dl.items)
+			return dl.visibleCount()
 		},
+		// 2) Create the row
 		func() fyne.CanvasObject {
-			// The list will create rows on demand
 			return NewDuplicatesListRow(dl.OnRowTapped)
 		},
+		// 3) Update the row
 		func(itemID widget.ListItemID, co fyne.CanvasObject) {
 			dl.updateListRow(itemID, co)
 		},
@@ -64,6 +71,80 @@ func NewDuplicatesList(videoData [][]*models.VideoData) *DuplicatesList {
 	dl.SetData(videoData)
 
 	return dl
+}
+
+func (dl *DuplicatesList) ApplyFilter(query searchQuery) {
+	dl.mutex.Lock()
+	defer dl.mutex.Unlock()
+
+	// 1) If query is empty, just unhide everything
+	if len(query.orGroups) == 0 {
+		for i := range dl.items {
+			dl.items[i].Hidden = false
+		}
+		return
+	}
+
+	// 2) Hide or show each row
+	for i, it := range dl.items {
+		// Always show the "Columns" header
+		if it.IsColumnsHeader {
+			dl.items[i].Hidden = false
+			continue
+		}
+
+		// Evaluate group headers AFTER we know about their items
+		// For now, tentatively hide them; we’ll fix group-headers in next step
+		if it.IsGroupHeader {
+			dl.items[i].Hidden = true
+			continue
+		}
+
+		// Normal video row
+		if it.VideoData == nil {
+			// e.g. no data => hide
+			dl.items[i].Hidden = true
+			continue
+		}
+
+		// If it matches the query, unhide; else hide
+		if rowMatchesQuery(it, query) {
+			dl.items[i].Hidden = false
+		} else {
+			dl.items[i].Hidden = true
+		}
+	}
+
+	// 3) Show group-headers if at least one item in that group is not hidden
+	groupHasVisible := make(map[int]bool)
+	for _, it := range dl.items {
+		if !it.IsColumnsHeader && !it.IsGroupHeader && !it.Hidden {
+			groupHasVisible[it.GroupIndex] = true
+		}
+	}
+	for i, it := range dl.items {
+		if it.IsGroupHeader && groupHasVisible[it.GroupIndex] {
+			dl.items[i].Hidden = false
+		}
+	}
+}
+
+func rowMatchesQuery(it duplicateListItem, query searchQuery) bool {
+	if it.VideoData == nil {
+		return false
+	}
+
+	// Combine path + filename
+	checkStr := it.VideoData.Video.Path + " " + it.VideoData.Video.FileName
+	checkStr = strings.ToLower(checkStr)
+
+	// Must satisfy at least one OR-group
+	for _, ag := range query.orGroups {
+		if andGroupSatisfied(checkStr, ag) {
+			return true
+		}
+	}
+	return false
 }
 
 // SetData flattens the groups into a single list.
@@ -159,8 +240,8 @@ func (dl *DuplicatesList) CreateRenderer() fyne.WidgetRenderer {
 
 func (dl *DuplicatesList) updateListRow(itemID widget.ListItemID, co fyne.CanvasObject) {
 	dl.mutex.RLock()
-
-	if itemID < 0 || itemID >= len(dl.items) {
+	realIndex := dl.visibleIndexToItemIndex(itemID)
+	if realIndex < 0 || realIndex >= len(dl.items) {
 		slog.Warn("Item ID out of bounds", slog.Int("itemID", itemID))
 		dl.mutex.RUnlock()
 		return
@@ -173,27 +254,47 @@ func (dl *DuplicatesList) updateListRow(itemID widget.ListItemID, co fyne.Canvas
 		return
 	}
 
-	item := dl.items[itemID]
-	row.itemID = itemID
+	item := dl.items[realIndex]
+	row.itemID = realIndex
 
-	// Now update the content
+	// Update row
 	row.Update(item)
 
-	// We do this once so that the row remains at the correct size
-	// as long as the content is the same.
-	//
-	// Measure the row's entire MinSize() to account for the path text wrap, screenshots, etc.
-	// If you want to guarantee at least 148, do it here:
+	// If needed, set a specific item height
 	if item.IsColumnsHeader || item.IsGroupHeader {
 		dl.mutex.RUnlock()
 		dl.list.SetItemHeight(itemID, 50)
 		return
 	}
 
-	rowMin := row.MinSize() // calls duplicatesListRowRenderer.MinSize()
+	rowMin := row.MinSize()
 	totalRowHeight := fyne.Max(148, rowMin.Height)
 	dl.mutex.RUnlock()
 	dl.list.SetItemHeight(itemID, totalRowHeight)
+}
+
+// visibleIndexToItemIndex returns the actual index in dl.items for the nth visible item
+func (dl *DuplicatesList) visibleIndexToItemIndex(visibleIndex int) int {
+	count := 0
+	for i, it := range dl.items {
+		if !it.Hidden {
+			if count == visibleIndex {
+				return i
+			}
+			count++
+		}
+	}
+	return -1
+}
+
+func (dl *DuplicatesList) visibleCount() int {
+	count := 0
+	for _, it := range dl.items {
+		if !it.Hidden {
+			count++
+		}
+	}
+	return count
 }
 
 // ClearSelection unselects all items.
@@ -203,7 +304,6 @@ func (dl *DuplicatesList) ClearSelection() {
 		dl.items[i].Selected = false
 	}
 	dl.mutex.Unlock()
-
 	dl.list.Refresh()
 }
 

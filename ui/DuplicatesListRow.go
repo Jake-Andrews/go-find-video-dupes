@@ -4,7 +4,6 @@ package ui
 import (
 	"fmt"
 	"image/color"
-	"log"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -19,6 +18,8 @@ type DuplicatesListRow struct {
 
 	// "header" row for columns
 	columnsHeaderContainer *fyne.Container
+	fileSizes              *canvas.Text
+	fileNum                *canvas.Text
 
 	// group header row
 	groupHeaderContainer *fyne.Container
@@ -43,7 +44,7 @@ type DuplicatesListRow struct {
 
 // NewDuplicatesListRow constructs a row with sub-elements for each usage scenario.
 func NewDuplicatesListRow(onTapped func(itemID int, selected bool)) *DuplicatesListRow {
-	log.Println("Setting duplicatelistrow")
+	// log.Println("Setting duplicatelistrow")
 	row := &DuplicatesListRow{
 		onTapped: onTapped,
 	}
@@ -83,20 +84,26 @@ func NewDuplicatesListRow(onTapped func(itemID int, selected bool)) *DuplicatesL
 		color.RGBA{128, 128, 128, 255},
 	)
 
+	row.columnsHeaderContainer = wrapWithBorder(
+		container.NewVBox(row.columnsHeaderContainer),
+		color.RGBA{128, 128, 128, 255},
+	)
+
 	//---------------------------------------------------------------------
 	// 2) Group header row
 	//---------------------------------------------------------------------
 	row.groupHeaderText = canvas.NewText("", color.White)
 	row.groupHeaderText.Alignment = fyne.TextAlignCenter
 
-	groupCol := wrapWithBorder(
+	row.groupHeaderContainer = wrapWithBorder(
 		container.New(layout.NewGridWrapLayout(fyne.NewSize(1200, 50)), row.groupHeaderText),
 		color.RGBA{128, 128, 128, 255},
 	)
-	row.groupHeaderContainer = wrapWithBorder(
-		container.NewStack(groupCol),
-		color.RGBA{200, 200, 200, 255},
-	)
+	row.fileSizes = canvas.NewText("", color.White)
+	row.fileSizes.Alignment = fyne.TextAlignCenter
+
+	row.fileNum = canvas.NewText("", color.White)
+	row.fileNum.Alignment = fyne.TextAlignCenter
 
 	//---------------------------------------------------------------------
 	// 3) Video row
