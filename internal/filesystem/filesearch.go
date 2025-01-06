@@ -166,13 +166,13 @@ func checkValidVideo(path string, fileInfo os.FileInfo) bool {
 }
 
 func validExt(path string, c *config.Config) bool {
-	// 1) Extract and normalize the file extension
+	// Extract and normalize the file extension
 	fileExt := strings.ToLower(filepath.Ext(path))
 	if len(fileExt) > 0 {
 		fileExt = fileExt[1:]
 	}
 
-	// 2) Check if this extension is included
+	// Check if this extension is included
 	if len(c.IncludeExt.Values) > 0 {
 		included := false
 		for _, inc := range c.IncludeExt.Values {
@@ -186,7 +186,7 @@ func validExt(path string, c *config.Config) bool {
 		}
 	}
 
-	// 3) Check if this extension is ignored
+	// Check if this extension is ignored
 	for _, ig := range c.IgnoreExt.Values {
 		if strings.EqualFold(fileExt, strings.ToLower(ig)) {
 			return false
@@ -196,17 +196,17 @@ func validExt(path string, c *config.Config) bool {
 }
 
 func validFileName(d fs.DirEntry, c *config.Config) bool {
-	// 1) Convert file name to lowercase
+	// Convert file name to lowercase
 	fileName := strings.ToLower(d.Name())
 
-	// 2) Check if file name is ignored
+	// Check if file name is ignored
 	for _, ig := range c.IgnoreStr.Values {
 		if strings.Contains(fileName, strings.ToLower(ig)) {
 			return false
 		}
 	}
 
-	// 3) Check if file name is included (if includes are provided)
+	// Check if file name is included (if includes are provided)
 	if len(c.IncludeStr.Values) > 0 {
 		for _, inc := range c.IncludeStr.Values {
 			if strings.Contains(fileName, strings.ToLower(inc)) {

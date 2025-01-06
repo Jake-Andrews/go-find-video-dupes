@@ -1,6 +1,6 @@
+// DuplicatesListRow.go
 package ui
 
-// DuplicatesListRow.go
 import (
 	"fmt"
 	"image/color"
@@ -12,11 +12,11 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// DuplicatesListRow represents a single row in the DuplicatesList.
+// A single row in the DuplicatesList
 type DuplicatesListRow struct {
 	widget.BaseWidget
 
-	// "header" row for columns
+	// header row for columns
 	columnsHeaderContainer *fyne.Container
 	fileSizes              *canvas.Text
 	fileNum                *canvas.Text
@@ -44,14 +44,11 @@ type DuplicatesListRow struct {
 
 // NewDuplicatesListRow constructs a row with sub-elements for each usage scenario.
 func NewDuplicatesListRow(onTapped func(itemID int, selected bool)) *DuplicatesListRow {
-	// log.Println("Setting duplicatelistrow")
 	row := &DuplicatesListRow{
 		onTapped: onTapped,
 	}
 
-	//---------------------------------------------------------------------
-	// 1) Columns header row
-	//---------------------------------------------------------------------
+	// Columns header row
 	headerLabel1 := newCenteredTruncatedText("Screenshots")
 	headerLabel2 := newCenteredTruncatedText("Path")
 	headerLabel3 := newCenteredTruncatedText("Stats")
@@ -89,9 +86,7 @@ func NewDuplicatesListRow(onTapped func(itemID int, selected bool)) *DuplicatesL
 		color.RGBA{128, 128, 128, 255},
 	)
 
-	//---------------------------------------------------------------------
-	// 2) Group header row
-	//---------------------------------------------------------------------
+	// Group header row
 	row.groupHeaderText = canvas.NewText("", color.White)
 	row.groupHeaderText.Alignment = fyne.TextAlignCenter
 
@@ -105,9 +100,7 @@ func NewDuplicatesListRow(onTapped func(itemID int, selected bool)) *DuplicatesL
 	row.fileNum = canvas.NewText("", color.White)
 	row.fileNum.Alignment = fyne.TextAlignCenter
 
-	//---------------------------------------------------------------------
-	// 3) Video row
-	//---------------------------------------------------------------------
+	// Video row
 	row.screenshotContainer = wrapWithBorder(
 		container.NewCenter(container.NewHBox()),
 		color.RGBA{0, 255, 255, 255},
@@ -151,19 +144,16 @@ func NewDuplicatesListRow(onTapped func(itemID int, selected bool)) *DuplicatesL
 	return row
 }
 
-// newCenteredTruncatedText creates a centered canvas.Text with truncation.
 func newCenteredTruncatedText(text string) *canvas.Text {
 	txt := canvas.NewText(text, color.White)
 	txt.Alignment = fyne.TextAlignCenter
 	return txt
 }
 
-// newLeftAlignedContainer is a helper for left-aligned content in a container
 func newLeftAlignedContainer(obj fyne.CanvasObject) *fyne.Container {
 	return container.NewVBox(layout.NewSpacer(), obj, layout.NewSpacer())
 }
 
-// wrapWithBorder adds a border to a container
 func wrapWithBorder(obj fyne.CanvasObject, borderColor color.Color) *fyne.Container {
 	border := canvas.NewRectangle(borderColor)
 	border.StrokeColor = borderColor
@@ -185,7 +175,6 @@ func (r *DuplicatesListRow) Tapped(_ *fyne.PointEvent) {
 func (r *DuplicatesListRow) CreateRenderer() fyne.WidgetRenderer {
 	bg := canvas.NewRectangle(r.backgroundColor())
 
-	// Stack background at the bottom, then place actual content on top
 	content := container.NewStack(
 		bg,
 		container.NewVBox(
@@ -257,14 +246,12 @@ func formatDuration(seconds float32) string {
 	return fmt.Sprintf("%02d:%02d:%02d", hours, mins, secs)
 }
 
-// Helper function to create a left-aligned, vertically centered container for canvas.Text
 func newLeftAlignedCanvasText(text string, clr color.Color) *canvas.Text {
 	txt := canvas.NewText(text, clr)
 	txt.Alignment = fyne.TextAlignLeading
 	return txt
 }
 
-// Populate the video row
 func (r *DuplicatesListRow) updateVideoRow(item duplicateListItem) {
 	vd := item.VideoData
 	if vd == nil {
@@ -273,7 +260,7 @@ func (r *DuplicatesListRow) updateVideoRow(item duplicateListItem) {
 		return
 	}
 
-	// 1) Screenshots
+	// Screenshots
 	r.screenshotContainer.Objects = nil
 	cols := 4
 	grid := container.NewGridWithColumns(cols)
@@ -288,11 +275,11 @@ func (r *DuplicatesListRow) updateVideoRow(item duplicateListItem) {
 	}
 	r.screenshotContainer.Refresh()
 
-	// 2) Path
+	// Path
 	r.pathText.Text = vd.Video.Path
 	r.pathText.Refresh()
 
-	// 3) Stats column
+	// Stats
 	statsObjects := []fyne.CanvasObject{
 		layout.NewSpacer(),
 		newLeftAlignedCanvasText(formatFileSize(vd.Video.Size), color.White),
@@ -305,11 +292,11 @@ func (r *DuplicatesListRow) updateVideoRow(item duplicateListItem) {
 	r.statsLabel.Objects = statsObjects
 	r.statsLabel.Refresh()
 
-	// 4) Codecs column
+	// Codecs column
 	r.codecsText.Text = fmt.Sprintf("%s / %s", vd.Video.VideoCodec, vd.Video.AudioCodec)
 	r.codecsText.Refresh()
 
-	// 5) Links column
+	// Links column
 	linksObjects := []fyne.CanvasObject{
 		layout.NewSpacer(),
 		newLeftAlignedCanvasText(fmt.Sprintf("Symbolic: %t", vd.Video.IsSymbolicLink), color.White),

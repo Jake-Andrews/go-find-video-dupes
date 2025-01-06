@@ -44,6 +44,3 @@ func (s *Screenshots) DecodeImages(base64Strings []string) error {
 	}
 	return nil
 }
-
-// Metadata    Metadata `db:"metadata"`
-// type Metadata map[string]interface{}

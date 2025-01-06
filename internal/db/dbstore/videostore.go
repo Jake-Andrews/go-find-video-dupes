@@ -31,12 +31,7 @@ func NewVideoStore(DB *sql.DB) store.VideoStore {
 	}
 }
 
-// GetDuplicateVideoData returns video-hash groups that share the same bucket (bucket != -1).
-// This reflects "duplicate groups" or related items.
-// GetDuplicateVideoData now selects all videos,
-// then loads each video’s videohash (if any), plus screenshots for that hash.
 func (r *videoRepo) GetDuplicateVideoData(ctx context.Context) ([][]*models.VideoData, error) {
-	// 1) Fetch all videohashes
 	var videohashes []*models.Videohash
 	query := `
         SELECT *
@@ -46,28 +41,27 @@ func (r *videoRepo) GetDuplicateVideoData(ctx context.Context) ([][]*models.Vide
 		return nil, fmt.Errorf("querying videohashes: %v", err)
 	}
 	if len(videohashes) == 0 {
-		return nil, nil // no videohashes => empty
+		return nil, nil
 	}
 
-	// Collect videohash IDs
 	hashIDs := make([]int64, 0, len(videohashes))
 	for _, vh := range videohashes {
 		hashIDs = append(hashIDs, vh.ID)
 	}
 
-	// 2) Fetch related videos for each videohash
+	// Fetch videos keyed by videohash IDs
 	videosByHashID, err := r.GetVideosByVideohashIDs(ctx, hashIDs)
 	if err != nil {
 		return nil, fmt.Errorf("fetching related videos: %w", err)
 	}
 
-	// 3) Fetch screenshots keyed by videohash ID
+	// Fetch screenshots keyed by videohash IDs
 	screenshotMap, err := r.getScreenshotsByVideohashIDs(ctx, hashIDs)
 	if err != nil {
 		return nil, fmt.Errorf("fetching screenshots: %w", err)
 	}
 
-	// 4) Group everything by bucket, ensuring all combinations are created
+	// Group everything by bucket (duplicate groups)
 	groupedByBucket := make(map[int][]*models.VideoData)
 
 	for _, vh := range videohashes {
@@ -77,10 +71,10 @@ func (r *videoRepo) GetDuplicateVideoData(ctx context.Context) ([][]*models.Vide
 		vids := videosByHashID[vh.ID]
 		sc := screenshotMap[vh.ID]
 		if sc == nil {
-			sc = &models.Screenshots{} // placeholder if no screenshots
+			sc = &models.Screenshots{}
 		}
 
-		// Create VideoData for each video, ensuring redundancy
+		// redundancy
 		if len(vids) > 0 {
 			for _, vid := range vids {
 				groupedByBucket[vh.Bucket] = append(groupedByBucket[vh.Bucket], &models.VideoData{
@@ -90,7 +84,7 @@ func (r *videoRepo) GetDuplicateVideoData(ctx context.Context) ([][]*models.Vide
 				})
 			}
 		} else {
-			// If no videos reference this hash, still store the hash + screenshot
+			// if no videos reference this hash, still store the hash + screenshot
 			groupedByBucket[vh.Bucket] = append(groupedByBucket[vh.Bucket], &models.VideoData{
 				Videohash:  *vh,
 				Screenshot: *sc,
@@ -98,8 +92,6 @@ func (r *videoRepo) GetDuplicateVideoData(ctx context.Context) ([][]*models.Vide
 		}
 	}
 
-	// 5) Convert map => slice of slices
-	//    each sub-slice = all videos that share the same bucket
 	var result [][]*models.VideoData
 	for _, group := range groupedByBucket {
 		if len(group) >= 2 {
@@ -111,12 +103,11 @@ func (r *videoRepo) GetDuplicateVideoData(ctx context.Context) ([][]*models.Vide
 }
 
 func (r *videoRepo) GetVideosByVideohashIDs(ctx context.Context, hashIDs []int64) (map[int64][]*models.Video, error) {
-	// Ensure there are hashIDs to query
 	if len(hashIDs) == 0 {
 		return nil, nil
 	}
 
-	// Generate placeholders for the IN clause
+	// placeholders for the IN clause
 	placeholders := make([]string, len(hashIDs))
 	args := make([]interface{}, len(hashIDs))
 	for i, id := range hashIDs {
@@ -124,14 +115,12 @@ func (r *videoRepo) GetVideosByVideohashIDs(ctx context.Context, hashIDs []int64
 		args[i] = id
 	}
 
-	// Construct the query
 	query := fmt.Sprintf(`
         SELECT *
         FROM video
         WHERE FK_video_videohash IN (%s)
     `, strings.Join(placeholders, ", "))
 
-	// Execute the query
 	var videos []*models.Video
 	if err := sqlscan.Select(ctx, r.db, &videos, query, args...); err != nil {
 		return nil, fmt.Errorf("querying videos by videohash IDs: %w", err)
@@ -147,7 +136,7 @@ func (r *videoRepo) GetVideosByVideohashIDs(ctx context.Context, hashIDs []int64
 }
 
 // GetVideosWithValidHashes retrieves videos that have valid hashes (bucket != -1).
-// Because now video references videohash, we JOIN on video.FK_video_videohash = videohash.id.
+// Video references videohash JOIN on video.FK_video_videohash = videohash.id.
 func (r *videoRepo) GetVideosWithValidHashes(ctx context.Context) ([]models.Video, error) {
 	query := `
 		SELECT DISTINCT v.*
@@ -165,7 +154,7 @@ func (r *videoRepo) GetVideosWithValidHashes(ctx context.Context) ([]models.Vide
 
 // GetScreenshotsForValidHashes retrieves screenshots for valid (bucket != -1) video hashes.
 func (r *videoRepo) GetScreenshotsForValidHashes(ctx context.Context) (map[int64]models.Screenshots, error) {
-	// Step 1: Query all *videohash IDs* that are valid
+	// Query all valid *videohash IDs*
 	query := `
 		SELECT vh.id
 		FROM videohash vh
@@ -180,7 +169,7 @@ func (r *videoRepo) GetScreenshotsForValidHashes(ctx context.Context) (map[int64
 		return make(map[int64]models.Screenshots), nil
 	}
 
-	// Step 2: Fetch screenshots by these videohash IDs
+	// Fetch screenshots by these videohash IDs
 	placeholders := strings.Repeat("?,", len(hashIDs))
 	placeholders = placeholders[:len(placeholders)-1] // Remove trailing comma
 
@@ -198,7 +187,7 @@ func (r *videoRepo) GetScreenshotsForValidHashes(ctx context.Context) (map[int64
 		return nil, fmt.Errorf("query raw screenshots: %w", err)
 	}
 
-	// Step 3: Decode screenshots into a map keyed by videohash ID
+	// Decode screenshots into a map keyed by videohash ID
 	screenshotsMap := make(map[int64]models.Screenshots)
 	for _, row := range rawScreenshots {
 		var base64Strings []string
@@ -247,7 +236,7 @@ func (r *videoRepo) CreateVideo(ctx context.Context, video *models.Video, hash *
 		}
 	}()
 
-	// Step 1: Check if the videohash already exists
+	// Check if the videohash already exists
 	var existingHashID int64
 	err = tx.QueryRowContext(ctx, `
 		SELECT id
@@ -260,7 +249,7 @@ func (r *videoRepo) CreateVideo(ctx context.Context, video *models.Video, hash *
 	}
 
 	if err == sql.ErrNoRows {
-		// Step 2: Insert the videohash record if it doesn't exist
+		// Insert the videohash record if it doesn't exist
 		neighboursJSON, err := json.Marshal(hash.Neighbours)
 		if err != nil {
 			return fmt.Errorf("marshal neighbours: %w", err)
@@ -286,10 +275,10 @@ func (r *videoRepo) CreateVideo(ctx context.Context, video *models.Video, hash *
 		}
 	}
 
-	// Step 3: Now attach the existing/new videohash to the video
+	// Now attach the existing/new videohash to the video
 	video.FKVideoVideohash = existingHashID
 
-	// Step 4: Insert the video referencing the existing/new videohash
+	// Insert the video referencing the existing/new videohash
 	cols, placeholders, vals, err := buildInsertQueryAndValues(video)
 	if err != nil {
 		return fmt.Errorf("build insert data for video: %w", err)
@@ -309,7 +298,7 @@ func (r *videoRepo) CreateVideo(ctx context.Context, video *models.Video, hash *
 	}
 	video.ID = videoID
 
-	// Step 5: Insert screenshot referencing the same videohash
+	// Insert screenshot referencing the same videohash
 	base64Images, err := sc.EncodeImages()
 	if err != nil {
 		return fmt.Errorf("error encoding images to base64, err: %v", err)
@@ -332,7 +321,7 @@ func (r *videoRepo) CreateVideo(ctx context.Context, video *models.Video, hash *
 	return nil
 }
 
-// GetVideo fetches a single video by file path, along with its (single) videohash.
+// GetVideo fetches a single video by file path along with its videohash.
 // Because the video references the hash via FK_video_videohash, we look up the hash by that ID.
 func (r *videoRepo) GetVideo(ctx context.Context, videoPath string) (*models.Video, *models.Videohash, error) {
 	var video models.Video
@@ -370,7 +359,6 @@ func (r *videoRepo) GetVideo(ctx context.Context, videoPath string) (*models.Vid
 	return &video, &hash, nil
 }
 
-// GetAllVideos returns all videos in the DB.
 func (r *videoRepo) GetAllVideos(ctx context.Context) ([]*models.Video, error) {
 	var videos []*models.Video
 	err := sqlscan.Select(ctx, r.db, &videos, `
@@ -384,7 +372,6 @@ func (r *videoRepo) GetAllVideos(ctx context.Context) ([]*models.Video, error) {
 	return videos, nil
 }
 
-// GetAllVideoHashes returns all videohashes in the DB.
 func (r *videoRepo) GetAllVideoHashes(ctx context.Context) ([]*models.Videohash, error) {
 	var hashes []*models.Videohash
 	err := sqlscan.Select(ctx, r.db, &hashes, `
@@ -559,7 +546,7 @@ func (r *videoRepo) getScreenshotsByVideohashIDs(ctx context.Context, videohashI
 	return screenshotMap, nil
 }
 
-// int64ToInterfaceSlice helps us build the query args for a variable list of IDs
+// helps to build the query args for a variable list of IDs
 func int64ToInterfaceSlice(ids []int64) []interface{} {
 	result := make([]interface{}, len(ids))
 	for i, id := range ids {

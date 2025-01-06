@@ -24,11 +24,9 @@ type duplicateListItem struct {
 	VideoData  *models.VideoData
 	Selected   bool
 
-	// New field: true if this row should be hidden due to filter
-	Hidden bool
+	Hidden bool // If this row should be hidden due to filter
 }
 
-// DuplicatesList displays videos in duplicate groups, with a single header row at the top.
 type DuplicatesList struct {
 	widget.BaseWidget
 
@@ -39,7 +37,6 @@ type DuplicatesList struct {
 	OnRowTapped func(itemID int, selected bool)
 }
 
-// NewDuplicatesList creates and returns our custom DuplicatesList.
 func NewDuplicatesList(videoData [][]*models.VideoData) *DuplicatesList {
 	slog.Info("Creating DuplicatesList")
 	dl := &DuplicatesList{}
@@ -49,25 +46,21 @@ func NewDuplicatesList(videoData [][]*models.VideoData) *DuplicatesList {
 		dl.handleRowTapped(itemID, selected)
 	}
 
-	// Build the widget.List
 	dl.list = widget.NewList(
-		// 1) Return how many are visible
+		// length = how many are visible
 		func() int {
 			dl.mutex.RLock()
 			defer dl.mutex.RUnlock()
 			return dl.visibleCount()
 		},
-		// 2) Create the row
 		func() fyne.CanvasObject {
 			return NewDuplicatesListRow(dl.OnRowTapped)
 		},
-		// 3) Update the row
 		func(itemID widget.ListItemID, co fyne.CanvasObject) {
 			dl.updateListRow(itemID, co)
 		},
 	)
 
-	// Insert data
 	dl.SetData(videoData)
 
 	return dl
@@ -77,7 +70,7 @@ func (dl *DuplicatesList) ApplyFilter(query searchQuery) {
 	dl.mutex.Lock()
 	defer dl.mutex.Unlock()
 
-	// 1) If query is empty, just unhide everything
+	// If query is empty unhide everything
 	if len(query.orGroups) == 0 {
 		for i := range dl.items {
 			dl.items[i].Hidden = false
@@ -85,7 +78,7 @@ func (dl *DuplicatesList) ApplyFilter(query searchQuery) {
 		return
 	}
 
-	// 2) Hide or show each row
+	// Hide or show each row
 	for i, it := range dl.items {
 		// Always show the "Columns" header
 		if it.IsColumnsHeader {
@@ -93,21 +86,19 @@ func (dl *DuplicatesList) ApplyFilter(query searchQuery) {
 			continue
 		}
 
-		// Evaluate group headers AFTER we know about their items
-		// For now, tentatively hide them; we’ll fix group-headers in next step
+		// Tentatively hide group headers, unhide later if there are
+		// unhidden group items
 		if it.IsGroupHeader {
 			dl.items[i].Hidden = true
 			continue
 		}
 
-		// Normal video row
 		if it.VideoData == nil {
-			// e.g. no data => hide
 			dl.items[i].Hidden = true
 			continue
 		}
 
-		// If it matches the query, unhide; else hide
+		// If path matches the query unhide, else hide
 		if rowMatchesQuery(it, query) {
 			dl.items[i].Hidden = false
 		} else {
@@ -115,7 +106,7 @@ func (dl *DuplicatesList) ApplyFilter(query searchQuery) {
 		}
 	}
 
-	// 3) Show group-headers if at least one item in that group is not hidden
+	// Show group-headers if at least one item in that group is not hidden
 	groupHasVisible := make(map[int]bool)
 	for _, it := range dl.items {
 		if !it.IsColumnsHeader && !it.IsGroupHeader && !it.Hidden {
@@ -147,12 +138,12 @@ func rowMatchesQuery(it duplicateListItem, query searchQuery) bool {
 	return false
 }
 
-// SetData flattens the groups into a single list.
+// flattens the groups into a single list.
 //
-//  1. If there is at least one non-empty group, add a columns header row (once).
-//  2. For each group with >=2 items:
-//     a) Group header
-//     b) One item per video
+//	If there is at least one non-empty group, add a columns header row (once).
+//	For each group with >=2 items:
+//	   - Group header
+//	   - One item per video
 func (dl *DuplicatesList) SetData(videoData [][]*models.VideoData) {
 	dl.mutex.Lock()
 	dl.items = nil
@@ -166,7 +157,7 @@ func (dl *DuplicatesList) SetData(videoData [][]*models.VideoData) {
 		}
 	}
 
-	// Remove groups that have 0 or 1 videos, since they are not duplicates
+	// Remove groups that have 0 or 1 videos (not duplicate groups)
 	j := 0
 	for i := 0; i < len(videoData); i++ {
 		group := videoData[i]
@@ -232,8 +223,7 @@ func (dl *DuplicatesList) SetData(videoData [][]*models.VideoData) {
 	dl.list.Refresh()
 }
 
-// CreateRenderer is part of Fyne’s custom widget interface.
-// We only need to render the underlying “list” widget.
+// only render the underlying list widget.
 func (dl *DuplicatesList) CreateRenderer() fyne.WidgetRenderer {
 	return widget.NewSimpleRenderer(dl.list)
 }
@@ -257,10 +247,9 @@ func (dl *DuplicatesList) updateListRow(itemID widget.ListItemID, co fyne.Canvas
 	item := dl.items[realIndex]
 	row.itemID = realIndex
 
-	// Update row
 	row.Update(item)
 
-	// If needed, set a specific item height
+	// shrink header row heights
 	if item.IsColumnsHeader || item.IsGroupHeader {
 		dl.mutex.RUnlock()
 		dl.list.SetItemHeight(itemID, 50)
@@ -273,7 +262,7 @@ func (dl *DuplicatesList) updateListRow(itemID widget.ListItemID, co fyne.Canvas
 	dl.list.SetItemHeight(itemID, totalRowHeight)
 }
 
-// visibleIndexToItemIndex returns the actual index in dl.items for the nth visible item
+// returns the actual index in dl.items for the nth visible item
 func (dl *DuplicatesList) visibleIndexToItemIndex(visibleIndex int) int {
 	count := 0
 	for i, it := range dl.items {
@@ -297,7 +286,6 @@ func (dl *DuplicatesList) visibleCount() int {
 	return count
 }
 
-// ClearSelection unselects all items.
 func (dl *DuplicatesList) ClearSelection() {
 	dl.mutex.Lock()
 	for i := range dl.items {

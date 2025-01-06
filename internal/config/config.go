@@ -89,7 +89,7 @@ func validateStartingDirs(c *Config) {
 			slog.Error("Error opening dir",
 				slog.String("dir", dir),
 				slog.Any("error", err))
-			continue // or os.Exit(1) if you want to fail immediately
+			os.Exit(1)
 		}
 
 		abs, err := filepath.Abs(dir)
@@ -97,7 +97,7 @@ func validateStartingDirs(c *Config) {
 			slog.Error("Error getting the absolute path for dir",
 				slog.String("dir", dir),
 				slog.Any("error", err))
-			continue // or os.Exit(1)
+			os.Exit(1)
 		}
 		c.StartingDirs.Values[i] = abs
 
@@ -106,21 +106,20 @@ func validateStartingDirs(c *Config) {
 			slog.Error("Directory does not exist",
 				slog.String("dir", dir),
 				slog.Any("error", err))
-			continue
+			os.Exit(1)
 		} else if err != nil {
 			slog.Error("Error calling stat on dir",
 				slog.String("dir", dir),
 				slog.Any("error", err))
-			continue
+			os.Exit(1)
 		}
 		if !fsInfo.IsDir() {
 			slog.Error("Path is not a valid directory", slog.String("dir", dir))
+			os.Exit(1)
 		}
 	}
 }
 
-// SetupLogger creates a slog Logger that writes either to a file (JSON) or stdout (text).
-// SetupLogger creates a slog Logger that writes to both a file and stdout/stderr.
 func SetupLogger(logFilePath string) *slog.Logger {
 	opts := &slog.HandlerOptions{
 		Level: slog.LevelInfo,

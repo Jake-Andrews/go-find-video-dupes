@@ -92,16 +92,15 @@ func buildSettingsTab(duplicatesListWidget *DuplicatesList, originalVideoData []
 	})
 
 	// Create a form layout for the filter box
-	filterForm := container.NewVBox( // Corrected to use VBox for alignment
+	filterForm := container.NewVBox(
 		widget.NewLabel("Filter:"),
 		filterEntry,
 		filterButton,
 	)
 
-	filterForm.Hide() // Initially hidden
+	filterForm.Hide()
 	filterVisible := false
 
-	// Settings tab content
 	settingsContent := container.NewVBox(
 		widget.NewCheck("Show Filter Box", func(checked bool) {
 			filterVisible = checked
@@ -116,7 +115,6 @@ func buildSettingsTab(duplicatesListWidget *DuplicatesList, originalVideoData []
 	return settingsContent, filterForm
 }
 
-// forcedVariant forces dark or light theme
 type forcedVariant struct {
 	fyne.Theme
 	isDark bool
@@ -385,14 +383,14 @@ func generateKeyExcludingPath(videoData *models.VideoData) string {
 	return fmt.Sprintf("%v|%v|%v|%v|%v", videoData.Video.Size, videoData.Video.Duration, videoData.Video.VideoCodec, videoData.Video.AudioCodec, videoData.Video.AvgFrameRate)
 }
 
-// selectAllButLargest selects every video in the group *except* the one(s) with the largest .Size.
+// selectAllButLargest selects every video in the group EXCEPT the video with the largest Size
 func selectAllButLargest(duplicatesList *DuplicatesList) {
 	duplicatesList.ClearSelection()
 
 	duplicatesList.mutex.Lock()
 	defer duplicatesList.mutex.Unlock()
 
-	// 1) Find the largest size per group.
+	// Find the largest size per group.
 	groupMaxSize := make(map[int]int64)
 	for _, item := range duplicatesList.items {
 		if item.VideoData == nil {
@@ -404,7 +402,7 @@ func selectAllButLargest(duplicatesList *DuplicatesList) {
 		}
 	}
 
-	// 2) Select all items that are not the largest in that group.
+	// Select all items that are not the largest in that group.
 	for i := range duplicatesList.items {
 		item := &duplicatesList.items[i]
 		if item.VideoData == nil || item.IsGroupHeader || item.IsColumnsHeader {
@@ -416,16 +414,16 @@ func selectAllButLargest(duplicatesList *DuplicatesList) {
 	}
 }
 
-// selectAllButSmallest selects every video in the group *except* the one(s) with the smallest .Size.
+// selectAllButSmallest selects every video in the group EXCEPT the video with the smallest Size
 func selectAllButSmallest(duplicatesList *DuplicatesList) {
 	duplicatesList.ClearSelection()
 
 	duplicatesList.mutex.Lock()
 	defer duplicatesList.mutex.Unlock()
 
-	// 1) Find the smallest size per group.
+	// Find the smallest size per group.
 	groupMinSize := make(map[int]int64)
-	// Initialize to a very large number so first real .Size comparison will replace it
+	// Initialize to a very large number so first real Size comparison will replace it
 	for _, item := range duplicatesList.items {
 		if item.VideoData == nil {
 			continue
@@ -446,7 +444,7 @@ func selectAllButSmallest(duplicatesList *DuplicatesList) {
 		}
 	}
 
-	// 2) Select all items that are not the smallest in that group.
+	// Select all items that are not the smallest in that group.
 	for i := range duplicatesList.items {
 		item := &duplicatesList.items[i]
 		if item.VideoData == nil || item.IsGroupHeader || item.IsColumnsHeader {
@@ -458,14 +456,14 @@ func selectAllButSmallest(duplicatesList *DuplicatesList) {
 	}
 }
 
-// selectAllButNewest selects every video in the group *except* the one(s) with the newest (max) .ModifiedAt.
+// selectAllButNewest selects every video in the group EXCEPT the video with the newest (max) ModifiedAt
 func selectAllButNewest(duplicatesList *DuplicatesList) {
 	duplicatesList.ClearSelection()
 
 	duplicatesList.mutex.Lock()
 	defer duplicatesList.mutex.Unlock()
 
-	// 1) Find the newest (max) ModifiedAt per group.
+	// Find the newest (max) ModifiedAt per group.
 	groupMaxModified := make(map[int]time.Time)
 	for _, item := range duplicatesList.items {
 		if item.VideoData == nil {
@@ -477,7 +475,7 @@ func selectAllButNewest(duplicatesList *DuplicatesList) {
 		}
 	}
 
-	// 2) Select all items that are not the newest in that group.
+	// Select all items that are not the newest in that group.
 	for i := range duplicatesList.items {
 		item := &duplicatesList.items[i]
 		if item.VideoData == nil || item.IsGroupHeader || item.IsColumnsHeader {
@@ -491,22 +489,22 @@ func selectAllButNewest(duplicatesList *DuplicatesList) {
 	}
 }
 
-// selectAllButOldest selects every video in the group *except* the one(s) with the oldest (min) .ModifiedAt.
+// selectAllButOldest selects every video in the group EXCEPT the video with the oldest (min) ModifiedAt.
 func selectAllButOldest(duplicatesList *DuplicatesList) {
 	duplicatesList.ClearSelection()
 
 	duplicatesList.mutex.Lock()
 	defer duplicatesList.mutex.Unlock()
 
-	// 1) Find the oldest (min) ModifiedAt per group.
+	// Find the oldest (min) ModifiedAt per group.
 	// Initialize each group to a large time so we can compare properly
 	groupMinModified := make(map[int]time.Time)
 	for _, item := range duplicatesList.items {
 		if item.VideoData == nil {
 			continue
 		}
-		// Only initialize if not set (time.Time{}) is year 0001, we need the inverse approach
-		// so let's set it to a far future date.
+		// Only initialize if not set (time.Time{})
+		// set it to a far future date.
 		if _, ok := groupMinModified[item.GroupIndex]; !ok {
 			groupMinModified[item.GroupIndex] = time.Date(3000, 1, 1, 0, 0, 0, 0, time.UTC)
 		}
@@ -522,7 +520,7 @@ func selectAllButOldest(duplicatesList *DuplicatesList) {
 		}
 	}
 
-	// 2) Select all items that are not the oldest in that group.
+	// Select all items that are not the oldest in that group.
 	for i := range duplicatesList.items {
 		item := &duplicatesList.items[i]
 		if item.VideoData == nil || item.IsGroupHeader || item.IsColumnsHeader {
@@ -536,14 +534,15 @@ func selectAllButOldest(duplicatesList *DuplicatesList) {
 	}
 }
 
-// selectAllButHighestBitrate selects every video in the group *except* the one(s) with the highest .BitRate.
+// selectAllButHighestBitrate selects every video in the group EXCEPT the video
+// with the highest BitRate
 func selectAllButHighestBitrate(duplicatesList *DuplicatesList) {
 	duplicatesList.ClearSelection()
 
 	duplicatesList.mutex.Lock()
 	defer duplicatesList.mutex.Unlock()
 
-	// 1) Find the highest bitrate per group.
+	// Find the highest bitrate per group.
 	groupMaxBitrate := make(map[int]int)
 	for _, item := range duplicatesList.items {
 		if item.VideoData == nil {
@@ -555,7 +554,7 @@ func selectAllButHighestBitrate(duplicatesList *DuplicatesList) {
 		}
 	}
 
-	// 2) Select all items that are not the highest in that group.
+	// Select all items that are not the highest in that group.
 	for i := range duplicatesList.items {
 		item := &duplicatesList.items[i]
 		if item.VideoData == nil || item.IsGroupHeader || item.IsColumnsHeader {
@@ -568,14 +567,14 @@ func selectAllButHighestBitrate(duplicatesList *DuplicatesList) {
 	}
 }
 
-// selectAllButLowestBitrate selects every video in the group *except* the one(s) with the lowest .BitRate.
+// selectAllButLowestBitrate selects every video in the group except the videos with the lowest .BitRate.
 func selectAllButLowestBitrate(duplicatesList *DuplicatesList) {
 	duplicatesList.ClearSelection()
 
 	duplicatesList.mutex.Lock()
 	defer duplicatesList.mutex.Unlock()
 
-	// 1) Find the lowest bitrate per group.
+	// Find the lowest bitrate per group.
 	// Initialize each group to a large int so we can properly compare
 	groupMinBitrate := make(map[int]int)
 	existingGroups := make(map[int]struct{})
@@ -603,7 +602,7 @@ func selectAllButLowestBitrate(duplicatesList *DuplicatesList) {
 		}
 	}
 
-	// 2) Select all items that are not the lowest in that group.
+	// Select all items that are not the lowest in that group.
 	for i := range duplicatesList.items {
 		item := &duplicatesList.items[i]
 		if item.VideoData == nil || item.IsGroupHeader || item.IsColumnsHeader {
@@ -757,7 +756,3 @@ func sortVideosByTotalVideos(videoData [][]*models.VideoData, ascending bool) {
 		return countVideos(videoData[i]) > countVideos(videoData[j])
 	})
 }
-
-//func makeMenu(a fyne.app, w fyne.Window) *fyne.MainMenu {
-//
-//}

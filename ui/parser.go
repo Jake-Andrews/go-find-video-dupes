@@ -37,9 +37,9 @@ func parseSearchQuery(input string) searchQuery {
 		return searchQuery{} // empty query
 	}
 
-	// We handle the “OR” logic by splitting on `\s+or\s+` or `|`.
-	// We’ll do a quick pass to unify all “|” into the word “ or ” for simplicity.
-	// Then we’ll split on " or " (case-insensitive).
+	// Handle the “OR” logic by splitting on `\s+or\s+` or `|`.
+	// Do a quick pass to unify all “|” into the word “ or ” for simplicity.
+	// Then split on " or " (case-insensitive).
 	normalized := strings.ReplaceAll(input, "|", " or ")
 	// Also handle uppercase OR
 	normalized = strings.ReplaceAll(normalized, " OR ", " or ")
@@ -52,7 +52,7 @@ func parseSearchQuery(input string) searchQuery {
 			continue
 		}
 		// Now parse this part as a series of AND terms.
-		// We have to respect quoted phrases. We'll tokenize with a small function.
+		// Respect quoted phrases and tokenize
 		tokens := tokenize(part)
 		if len(tokens) == 0 {
 			continue
@@ -79,7 +79,6 @@ func splitCaseInsensitive(s, sep string) []string {
 	sepLower := strings.ToLower(sep)
 	sLower := strings.ToLower(s)
 
-	// start := 0
 	for {
 		idx := strings.Index(sLower, sepLower)
 		if idx == -1 {

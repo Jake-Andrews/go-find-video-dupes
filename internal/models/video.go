@@ -27,7 +27,7 @@ type Video struct {
 	Device         uint64    `db:"device" json:"device"`
 	AvgFrameRate   float32   `db:"avgFrameRate" json:"avgFrameRate"`
 	SampleRateAvg  int       `db:"sampleRateAvg" json:"sampleRateAvg"`
-	Corrupted      bool      // not in DB, for internal logic
+	Corrupted      bool
 
 	FKVideoVideohash int64 `db:"FK_video_videohash" json:"FK_video_videohash"`
 }

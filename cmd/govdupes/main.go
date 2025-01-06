@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"os"
 	"strconv"
@@ -35,7 +34,6 @@ func main() {
 	var cfg config.Config
 	cfg.ParseArgs()
 
-	log.Println(cfg.LogFilePath)
 	logger := config.SetupLogger(cfg.LogFilePath)
 	slog.SetDefault(logger)
 
@@ -57,12 +55,12 @@ func main() {
 		return
 	}
 
-	// Filter out any paths that are already in DB (based on dev/inode or path)
+	// Filter out any "files" that are already in DB (based on dev/inode and path)
 	videosNotInDB := reconcileVideosWithDB(fsVideos, dbVideos)
+
 	if len(videosNotInDB) != 0 {
 
 		validVideos := make([]*models.Video, 0, len(videosNotInDB))
-		// Compute FFprobe info for each "new" video
 		for _, vid := range videosNotInDB {
 			if err := ffprobe.GetVideoInfo(vid); err != nil {
 				vid.Corrupted = true
@@ -74,9 +72,10 @@ func main() {
 			validVideos = append(validVideos, vid)
 		}
 
-		// Build DB lookups for device/inode or size/xxhash
+		// Build DB lookups for device/inode and size/xxhash
 		deviceInodeToDBVideo := make(map[[2]uint64]*models.Video, len(dbVideos))
 		sizeHashToDBVideo := make(map[[2]string]*models.Video, len(dbVideos))
+
 		for _, v := range dbVideos {
 			keyDevIno := [2]uint64{v.Device, v.Inode}
 			deviceInodeToDBVideo[keyDevIno] = v
@@ -88,7 +87,7 @@ func main() {
 		}
 
 		// Decide if a video matches an existing DB video or is truly new.
-		//    If it matches (hardlink or exact duplicate), reuse that video’s existing phash info.
+		// If it matches (hardlink or exact duplicate), reuse that video’s existing phash info.
 		var videosReuseHash []*models.Video
 		var vNotRelatedToDB []*models.Video
 
@@ -112,7 +111,11 @@ func main() {
 			vNotRelatedToDB = append(vNotRelatedToDB, vid)
 		}
 
-		// 6) Among new videos not matching anything in DB, group them by dev/inode or size/xxhash
+		// For new videos that don't match anything in DB by dev/inode
+		// or size/xxhash, if their dev & inode or size & xxhash are =
+		// then group them together so later we can generate one phash
+		// for the group then propogate it to the rest
+		// Assumption: dev & inode = exact dupe, size & xxhash = exact dupe
 		var videosToCreate [][]*models.Video
 		deviceInodeToIndex := make(map[[2]uint64]int)
 		sizeHashToIndex := make(map[[2]string]int)
@@ -192,7 +195,6 @@ func main() {
 	}
 	slog.Info("Number of duplicate video groups", slog.Int("count", len(duplicateVideoData)))
 
-	// Finally, launch your UI
 	ui.CreateUI(duplicateVideoData)
 }
 
@@ -220,7 +222,6 @@ func reconcileVideosWithDB(videosFromFS []*models.Video, dbVideos []*models.Vide
 	return results
 }
 
-// CalculateXXHash reads chunks from the video file and updates the hash digest
 func CalculateXXHash(h *xxhash.Digest, v *models.Video) error {
 	f, err := os.Open(v.Path)
 	if err != nil {
@@ -250,7 +251,6 @@ func CalculateXXHash(h *xxhash.Digest, v *models.Video) error {
 	return nil
 }
 
-// Optional: Example function to write duplicates to JSON if you need it
 func writeDuplicatesToJSON(dupeVideoIndexes [][]int, fVideos []*models.Video, outputPath string) error {
 	duplicateGroups := make([][]models.Video, len(dupeVideoIndexes))
 	for i, group := range dupeVideoIndexes {
@@ -325,7 +325,6 @@ func generatePHashes(videosToCreate [][]*models.Video, vp *videoprocessor.FFmpeg
 			continue
 		}
 
-		// Save the video and associated data
 		for _, video := range group {
 			if err := videoStore.CreateVideo(context.Background(), video, pHash, screenshots); err != nil {
 				slog.Error("FAILED to create video in DB",
@@ -340,13 +339,11 @@ func generatePHashes(videosToCreate [][]*models.Video, vp *videoprocessor.FFmpeg
 	}
 }
 
-// Example of a parallel pHash generator
 func generatePHashesParallel(videosToCreate [][]*models.Video, vp *videoprocessor.FFmpegWrapper, videoStore store.VideoStore) {
 	const workerCount = 4
 	videoChan := make(chan []*models.Video, len(videosToCreate))
 	var wg sync.WaitGroup
 
-	// Worker goroutines
 	for i := 0; i < workerCount; i++ {
 		wg.Add(1)
 		go func() {
@@ -387,18 +384,15 @@ func generatePHashesParallel(videosToCreate [][]*models.Video, vp *videoprocesso
 		}()
 	}
 
-	// Send video groups to the channel
 	for _, group := range videosToCreate {
 		videoChan <- group
 	}
 	close(videoChan)
 
-	// Wait for all workers to finish
 	wg.Wait()
 	slog.Info("All pHash generation workers completed.")
 }
 
-// Example: parallel XXHash generation. Adjust concurrency and error handling to taste.
 func computeXXHashes(videos []*models.Video) []*models.Video {
 	var wg sync.WaitGroup
 	videoChan := make(chan *models.Video, len(videos))
