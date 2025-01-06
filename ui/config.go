@@ -70,9 +70,12 @@ func buildConfigTab(duplicatesListWidget *DuplicatesList, originalVideoData [][]
 	}
 
 	// List forms
+	dirStr := binding.NewString()
+	dirEntry := widget.NewEntryWithData(dirStr)
+
 	startingDirs := binding.BindStringList(&[]string{"./"})
 	appendBtn := widget.NewButton("Append", func() {
-		startingDirs.Append("sneed")
+		startingDirs.Append(dirEntry.Text)
 	})
 	deleteBtn := widget.NewButton("Delete", func() {
 		l := startingDirs.Length() - 1
@@ -88,7 +91,7 @@ func buildConfigTab(duplicatesListWidget *DuplicatesList, originalVideoData [][]
 
 	dirList := widget.NewListWithData(startingDirs,
 		func() fyne.CanvasObject {
-			return container.NewBorder(nil, nil, nil, widget.NewButton("-", nil),
+			return container.NewBorder(nil, nil, nil, nil,
 				widget.NewLabel(""))
 		},
 		func(item binding.DataItem, obj fyne.CanvasObject) {
@@ -96,8 +99,9 @@ func buildConfigTab(duplicatesListWidget *DuplicatesList, originalVideoData [][]
 			text := obj.(*fyne.Container).Objects[0].(*widget.Label)
 			text.Bind(f)
 		})
-	listPanel := container.NewBorder(nil, appendBtn, deleteBtn, nil, dirList)
-	content := container.NewVBox(checkWidget, form, listPanel)
+	listPanel := container.NewBorder(dirEntry, nil, nil, nil, dirList)
+	btns := container.NewHBox(appendBtn, deleteBtn)
+	content := container.NewVBox(checkWidget, form, btns, listPanel)
 	return content, filterForm, config.Config{}
 }
 
