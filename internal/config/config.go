@@ -1,5 +1,7 @@
 package config
 
+/*
+
 import (
 	"errors"
 	"flag"
@@ -78,11 +80,11 @@ func (c *Config) ParseArgs() {
 	flag.Parse()
 
 	c.FilesizeCutoff = int64(*fileSizeGiB * 1024 * 1024 * 1024)
-	validateStartingDirs(c)
+	ValidateStartingDirs(c)
 }
 
 // validateStartingDirs ensures starting directories exist and are actually dirs.
-func validateStartingDirs(c *Config) {
+func ValidateStartingDirs(c *Config) {
 	for i, dir := range c.StartingDirs.Values {
 		f, err := os.Open(dir)
 		if err != nil {
@@ -143,3 +145,4 @@ func SetupLogger(logFilePath string) *slog.Logger {
 
 	return slog.New(slog.NewJSONHandler(multiWriter, opts))
 }
+*/

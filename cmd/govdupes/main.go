@@ -15,7 +15,6 @@ import (
 	"github.com/cespare/xxhash/v2"
 	_ "modernc.org/sqlite"
 
-	"govdupes/internal/config"
 	store "govdupes/internal/db"
 	"govdupes/internal/db/dbstore"
 	"govdupes/internal/db/sqlite"
@@ -31,13 +30,13 @@ import (
 var wrongArgsMsg = "Error, your input must include only one arg which contains the path to the filedirectory to scan."
 
 func main() {
-	var cfg config.Config
+	var cfg ui.Config
 	cfg.ParseArgs()
 
-	logger := config.SetupLogger(cfg.LogFilePath)
+	logger := ui.SetupLogger(cfg.LogFilePath)
 	slog.SetDefault(logger)
 
-	db := sqlite.InitDB(cfg.DatabasePath.String())
+	db := sqlite.InitDB(cfg.DatabasePath)
 	defer db.Close()
 
 	videoStore := dbstore.NewVideoStore(db)

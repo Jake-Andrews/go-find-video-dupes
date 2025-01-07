@@ -7,15 +7,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	"govdupes/internal/config"
 	"govdupes/internal/models"
+	"govdupes/ui"
 )
 
-func SearchDirs(c *config.Config) []*models.Video {
+func SearchDirs(c *ui.Config) []*models.Video {
 	slog.Info("Searching directories")
 	videos := make([]*models.Video, 0)
 
-	for _, dir := range c.StartingDirs.Values {
+	for _, dir := range c.StartingDirs {
 		dir = filepath.Clean(strings.TrimSuffix(dir, "/"))
 		slog.Info("Searching recursively", slog.String("starting_dir", dir))
 		info, err := os.Stat(dir)
@@ -43,7 +43,7 @@ func SearchDirs(c *config.Config) []*models.Video {
 // check if file name is in ignorestr, if so ignore
 // check if filename is in includestr, if so include consider the file
 // if both includeext/includestr agree then include the file
-func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string) []*models.Video {
+func getVideosFromFS(fileSystem fs.FS, c *ui.Config, root string) []*models.Video {
 	slog.Info("Processing root directory", slog.String("root", root))
 	videos := make([]*models.Video, 0)
 	fileTracker := NewFileTracker()
@@ -52,6 +52,7 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string) []*models.
 		fileSystem,
 		".",
 		func(path string, d fs.DirEntry, err error) error {
+			slog.Info("Processing file", "file", path)
 			if err != nil {
 				slog.Error("Error walking through filesystem", slog.Any("error", err))
 				return err
@@ -165,7 +166,7 @@ func checkValidVideo(path string, fileInfo os.FileInfo) bool {
 	return true
 }
 
-func validExt(path string, c *config.Config) bool {
+func validExt(path string, c *ui.Config) bool {
 	// Extract and normalize the file extension
 	fileExt := strings.ToLower(filepath.Ext(path))
 	if len(fileExt) > 0 {
@@ -173,9 +174,9 @@ func validExt(path string, c *config.Config) bool {
 	}
 
 	// Check if this extension is included
-	if len(c.IncludeExt.Values) > 0 {
+	if len(c.IncludeExt) > 0 {
 		included := false
-		for _, inc := range c.IncludeExt.Values {
+		for _, inc := range c.IncludeExt {
 			if strings.EqualFold(fileExt, strings.ToLower(inc)) {
 				included = true
 				break
@@ -187,7 +188,7 @@ func validExt(path string, c *config.Config) bool {
 	}
 
 	// Check if this extension is ignored
-	for _, ig := range c.IgnoreExt.Values {
+	for _, ig := range c.IgnoreExt {
 		if strings.EqualFold(fileExt, strings.ToLower(ig)) {
 			return false
 		}
@@ -195,20 +196,20 @@ func validExt(path string, c *config.Config) bool {
 	return true
 }
 
-func validFileName(d fs.DirEntry, c *config.Config) bool {
+func validFileName(d fs.DirEntry, c *ui.Config) bool {
 	// Convert file name to lowercase
 	fileName := strings.ToLower(d.Name())
 
 	// Check if file name is ignored
-	for _, ig := range c.IgnoreStr.Values {
+	for _, ig := range c.IgnoreStr {
 		if strings.Contains(fileName, strings.ToLower(ig)) {
 			return false
 		}
 	}
 
 	// Check if file name is included (if includes are provided)
-	if len(c.IncludeStr.Values) > 0 {
-		for _, inc := range c.IncludeStr.Values {
+	if len(c.IncludeStr) > 0 {
+		for _, inc := range c.IncludeStr {
 			if strings.Contains(fileName, strings.ToLower(inc)) {
 				// Found an include match, so we can allow it
 				return true

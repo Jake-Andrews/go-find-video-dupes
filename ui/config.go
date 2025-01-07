@@ -2,14 +2,12 @@ package ui
 
 import (
 	"errors"
-	"flag"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"govdupes/internal/config"
 	"govdupes/internal/models"
 
 	"fyne.io/fyne/v2"
@@ -18,7 +16,11 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func buildConfigTab(duplicatesListWidget *DuplicatesList, originalVideoData [][]*models.VideoData) (fyne.CanvasObject, *fyne.Container, config.Config) {
+func buildConfigTab(
+	duplicatesListWidget *DuplicatesList,
+	originalVideoData [][]*models.VideoData,
+	cfg *Config,
+) (fyne.CanvasObject, *fyne.Container) {
 	// FILTER
 	filterEntry := widget.NewEntry()
 	filterEntry.SetPlaceHolder("Enter path/file search...")
@@ -26,17 +28,13 @@ func buildConfigTab(duplicatesListWidget *DuplicatesList, originalVideoData [][]
 	filterButton := widget.NewButton("Apply", func() {
 		slog.Info("Filter applied", slog.String("filter", filterEntry.Text))
 
-		// Parse the user filter string into a search query
 		query := parseSearchQuery(filterEntry.Text)
 
-		// Filter the data based on the query
 		filteredData := applyFilter(originalVideoData, query)
 
-		// Rebind to the duplicates list
 		duplicatesListWidget.SetData(filteredData)
 	})
 
-	// Create a form layout for the filter box
 	filterForm := container.NewVBox(
 		widget.NewLabel("Filter:"),
 		filterEntry,
@@ -58,43 +56,56 @@ func buildConfigTab(duplicatesListWidget *DuplicatesList, originalVideoData [][]
 
 	// REST OF CONFIG (binding settings to widgets)
 	formStruct := struct {
-		DatabasePath, LogFilePath, IgnoreStr, IncludeStr, IgnoreExt, IncludeExt         string
-		SavedScreenshots, AbsPath, FollowSymbolicLinks, SkipSymbolicLinks, SilentFFmpeg bool
-		FilesizeCutoff                                                                  int64
+		DatabasePath     string
+		LogFilePath      string
+		IgnoreStr        string
+		IncludeStr       string
+		IgnoreExt        string
+		IncludeExt       string
+		SavedScreenshots bool
+		AbsPath          bool
+		FollowSymbolic   bool
+		SkipSymbolic     bool
+		SilentFFmpeg     bool
+		FilesizeCutoff   int64
 	}{
-		DatabasePath:        "./videos.db",
-		LogFilePath:         "app.log",
-		IgnoreStr:           "",
-		IncludeStr:          "",
-		IgnoreExt:           "",
-		IncludeExt:          "mp4,m4a,webm",
-		SavedScreenshots:    true,
-		AbsPath:             true,
-		FollowSymbolicLinks: true,
-		SkipSymbolicLinks:   true,
-		SilentFFmpeg:        true,
-		FilesizeCutoff:      0,
+		DatabasePath:     "./videos.db",
+		LogFilePath:      "app.log",
+		IgnoreStr:        "",
+		IncludeStr:       "",
+		IgnoreExt:        "",
+		IncludeExt:       "mp4,m4a,webm",
+		SavedScreenshots: true,
+		AbsPath:          true,
+		FollowSymbolic:   true,
+		SkipSymbolic:     true,
+		SilentFFmpeg:     true,
+		FilesizeCutoff:   0,
 	}
 
+	// intermediate struct
 	formData := binding.BindStruct(&formStruct)
 	form := newFormWithData(formData)
-	form.OnSubmit = func() {
-		slog.Info("Printing form", "formStruct:", formStruct)
-	}
+
 	form.Append("check", checkWidget)
-	// List forms
+
 	dirStr := binding.NewString()
 	dirEntry := widget.NewEntryWithData(dirStr)
 
 	startingDirs := binding.BindStringList(&[]string{"./"})
+
 	appendBtn := widget.NewButton("Append", func() {
 		startingDirs.Append(dirEntry.Text)
 	})
 	deleteBtn := widget.NewButton("Delete", func() {
 		l := startingDirs.Length() - 1
+		if l < 0 {
+			return
+		}
 		str, err := startingDirs.GetValue(l)
 		if err != nil {
 			slog.Warn("failed getting value from startingDirs list", slog.Any("Error", err))
+			return
 		}
 		err = startingDirs.Remove(str)
 		if err != nil {
@@ -119,27 +130,60 @@ func buildConfigTab(duplicatesListWidget *DuplicatesList, originalVideoData [][]
 	btnsDirEntry := container.NewGridWithRows(3, startingDirsLabel, btns, dirEntry)
 	listPanel := container.NewBorder(btnsDirEntry, nil, nil, nil, dirList)
 
-	// ignorestr includestr ignoreext includeext
-	/*
-		ignStrBind := bindingStringErr("")
-		inclStrBind := bindingStringErr("")
-		ignExtBind := bindingStringErr("")
-		inclExtBind := bindingStringErr("")
-
-		ignStr := widget.NewEntryWithData(ignStrBind)
-		inclStr := widget.NewEntryWithData(inclStrBind)
-		ignExt := widget.NewEntryWithData(ignExtBind)
-		inclExt := widget.NewEntryWithData(inclExtBind)
-
-		ignStrLabel := widget.NewLabel("Ignore String:")
-		inclStrLabel := widget.NewLabel("Include String:")
-		ignExtLabel := widget.NewLabel("Ignore Ext:")
-		inclExtLabel := widget.NewLabel("Include Ext:")
-	*/
-
+	// MAIN LAYOUT
 	content := container.NewGridWithColumns(2, listPanel, form)
 
-	return content, filterForm, config.Config{}
+	// Hook up form submission to update "real" cfg
+	form.OnSubmit = func() {
+		slog.Info("Printing formStruct on Submit", "formStruct", formStruct)
+
+		cfg.DatabasePath = formStruct.DatabasePath
+
+		cfg.IgnoreStr = splitAndTrim(formStruct.IgnoreStr)
+		cfg.IncludeStr = splitAndTrim(formStruct.IncludeStr)
+		cfg.IgnoreExt = splitAndTrim(formStruct.IgnoreExt)
+		cfg.IncludeExt = splitAndTrim(formStruct.IncludeExt)
+
+		cfg.LogFilePath = formStruct.LogFilePath
+		cfg.SaveSC = formStruct.SavedScreenshots
+		cfg.AbsPath = formStruct.AbsPath
+		cfg.FollowSymbolicLinks = formStruct.FollowSymbolic
+		cfg.SkipSymbolicLinks = formStruct.SkipSymbolic
+		cfg.SilentFFmpeg = formStruct.SilentFFmpeg
+		cfg.FilesizeCutoff = formStruct.FilesizeCutoff
+
+		// read out each directory from the binding
+		length := startingDirs.Length()
+		var dirs []string
+		for i := 0; i < length; i++ {
+			v, err := startingDirs.GetValue(i)
+			if err == nil {
+				dirs = append(dirs, v)
+			}
+		}
+		cfg.StartingDirs = dirs
+		ValidateStartingDirs(cfg)
+
+		slog.Info("Updated real config.Config from UI", "cfg", cfg)
+	}
+
+	return content, filterForm
+}
+
+// Helper function that splits comma-separated strings into slices
+func splitAndTrim(s string) []string {
+	if s == "" {
+		return []string{}
+	}
+	parts := strings.Split(s, ",")
+	var result []string
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
 }
 
 func newFormWithData(data binding.DataMap) *widget.Form {
@@ -169,37 +213,13 @@ func createBoundItem(v binding.DataItem) fyne.CanvasObject {
 	}
 }
 
-type StringSlice struct {
-	Values      []string
-	wipeDefault bool // Track whether the default value is currently in use
-}
-
-func (s *StringSlice) String() string {
-	return strings.Join(s.Values, ", ")
-}
-
-func (s *StringSlice) Set(value string) error {
-	if s.wipeDefault {
-		s.Values = nil
-		s.wipeDefault = false
-	}
-	values := strings.Split(value, ",")
-	for _, v := range values {
-		v = strings.TrimSpace(v)
-		if v != "" {
-			s.Values = append(s.Values, v)
-		}
-	}
-	return nil
-}
-
 type Config struct {
-	DatabasePath        StringSlice
-	StartingDirs        StringSlice
-	IgnoreStr           StringSlice
-	IncludeStr          StringSlice
-	IgnoreExt           StringSlice
-	IncludeExt          StringSlice
+	DatabasePath        string
+	StartingDirs        []string
+	IgnoreStr           []string
+	IncludeStr          []string
+	IgnoreExt           []string
+	IncludeExt          []string
 	FilesizeCutoff      int64 // in bytes
 	SaveSC              bool
 	AbsPath             bool
@@ -209,40 +229,9 @@ type Config struct {
 	LogFilePath         string
 }
 
-func (c *Config) ParseArgs() {
-	c.DatabasePath = StringSlice{Values: []string{"./videos.db"}, wipeDefault: true}
-	c.StartingDirs = StringSlice{Values: []string{"."}, wipeDefault: true}
-	c.IgnoreStr = StringSlice{}
-	c.IncludeStr = StringSlice{}
-	c.IgnoreExt = StringSlice{}
-	c.IncludeExt = StringSlice{Values: []string{"mp4", "m4a", "webm"}, wipeDefault: false}
-	c.SaveSC = false
-	c.AbsPath = true
-	c.FollowSymbolicLinks = false
-	c.SkipSymbolicLinks = true
-
-	flag.Var(&c.DatabasePath, "dp", `Specify database path (default "./videos.db").`)
-	flag.Var(&c.StartingDirs, "sd", `Directory path(s) to search (default "."), multiple allowed.`)
-	flag.Var(&c.IgnoreStr, "igs", "String(s) to ignore, multiple allowed.")
-	flag.Var(&c.IncludeStr, "is", "String(s) to include, multiple allowed.")
-	flag.Var(&c.IgnoreExt, "ige", "Extension(s) to ignore, multiple allowed.")
-	flag.Var(&c.IncludeExt, "ie", "Extension(s) to include, multiple allowed.")
-
-	fileSizeGiB := flag.Float64("fs", 0, "Max file size in GiB (default 0).")
-	c.SaveSC = *flag.Bool("sc", true, "Flag to save screenshots, T/F (default False).")
-	c.SilentFFmpeg = *flag.Bool("sf", true, "Flag that determines if FFmpeg is silent or not, T/F (default True).")
-	c.FollowSymbolicLinks = *flag.Bool("fsl", true, "Follow symbolic links, T/F (default False).")
-	c.LogFilePath = *flag.String("log", "app.log", "Path to log file (default = app.log).")
-
-	flag.Parse()
-
-	c.FilesizeCutoff = int64(*fileSizeGiB * 1024 * 1024 * 1024)
-	validateStartingDirs(c)
-}
-
 // validateStartingDirs ensures starting directories exist and are actually dirs.
-func validateStartingDirs(c *Config) {
-	for i, dir := range c.StartingDirs.Values {
+func ValidateStartingDirs(c *Config) {
+	for i, dir := range c.StartingDirs {
 		f, err := os.Open(dir)
 		if err != nil {
 			slog.Error("Error opening dir",
@@ -258,7 +247,7 @@ func validateStartingDirs(c *Config) {
 				slog.Any("error", err))
 			os.Exit(1)
 		}
-		c.StartingDirs.Values[i] = abs
+		c.StartingDirs[i] = abs
 
 		fsInfo, err := f.Stat()
 		if errors.Is(err, os.ErrNotExist) {
@@ -309,4 +298,21 @@ func bindingStringErr(s string) binding.String {
 		slog.Warn("binding.NewString()", slog.Any("err", err))
 	}
 	return str
+}
+
+func (c *Config) ParseArgs() {
+	c.StartingDirs = []string{"."}
+	c.DatabasePath = "./videos.db"
+	c.LogFilePath = "app.log"
+	c.IgnoreStr = []string{}
+	c.IncludeStr = []string{}
+	c.IgnoreExt = []string{}
+	c.IncludeExt = []string{"mp4", "m4a", "webm"}
+	c.SaveSC = true
+	c.AbsPath = true
+	c.FollowSymbolicLinks = true
+	c.SkipSymbolicLinks = true
+	c.SilentFFmpeg = true
+	c.FilesizeCutoff = 0
+	ValidateStartingDirs(c)
 }

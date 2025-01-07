@@ -24,6 +24,8 @@ func CreateUI(videoData [][]*models.VideoData) {
 
 	a := app.New()
 
+	cfg := &Config{}
+
 	// copy of the original data so we can re-filter repeatedly hacky
 	originalVideoData := videoData
 
@@ -38,7 +40,7 @@ func CreateUI(videoData [][]*models.VideoData) {
 
 	themeTab := buildThemeTab(a)
 	sortSelectTab := buildSortSelectDeleteTab(duplicatesListWidget, videoData)
-	configTab, filterForm, _ := buildConfigTab(duplicatesListWidget, originalVideoData)
+	configTab, filterForm := buildConfigTab(duplicatesListWidget, originalVideoData, cfg)
 
 	// Tabs section
 	tabs := container.NewAppTabs(
