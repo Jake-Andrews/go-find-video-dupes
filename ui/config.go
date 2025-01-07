@@ -58,10 +58,23 @@ func buildConfigTab(duplicatesListWidget *DuplicatesList, originalVideoData [][]
 
 	// REST OF CONFIG (binding settings to widgets)
 	formStruct := struct {
-		DatabasePath, LogFilePath                                                      string
-		SaveScreenshots, AbsPath, FollowSymbolicLinks, SkipSymbolicLinks, SilentFFmpeg bool
-		FilesizeCutoff                                                                 int64
-	}{}
+		DatabasePath, LogFilePath, IgnoreStr, IncludeStr, IgnoreExt, IncludeExt         string
+		SavedScreenshots, AbsPath, FollowSymbolicLinks, SkipSymbolicLinks, SilentFFmpeg bool
+		FilesizeCutoff                                                                  int64
+	}{
+		DatabasePath:        "./videos.db",
+		LogFilePath:         "app.log",
+		IgnoreStr:           "",
+		IncludeStr:          "",
+		IgnoreExt:           "",
+		IncludeExt:          "mp4,m4a,webm",
+		SavedScreenshots:    true,
+		AbsPath:             true,
+		FollowSymbolicLinks: true,
+		SkipSymbolicLinks:   true,
+		SilentFFmpeg:        true,
+		FilesizeCutoff:      0,
+	}
 
 	formData := binding.BindStruct(&formStruct)
 	form := newFormWithData(formData)
@@ -101,11 +114,31 @@ func buildConfigTab(duplicatesListWidget *DuplicatesList, originalVideoData [][]
 		})
 
 	startingDirsLabel := widget.NewLabel("Directories to search:")
+
 	btns := container.NewGridWithColumns(2, appendBtn, deleteBtn)
 	btnsDirEntry := container.NewGridWithRows(3, startingDirsLabel, btns, dirEntry)
-	// dirListWrapper := container.NewWithoutLayout(dirList)
 	listPanel := container.NewBorder(btnsDirEntry, nil, nil, nil, dirList)
+
+	// ignorestr includestr ignoreext includeext
+	/*
+		ignStrBind := bindingStringErr("")
+		inclStrBind := bindingStringErr("")
+		ignExtBind := bindingStringErr("")
+		inclExtBind := bindingStringErr("")
+
+		ignStr := widget.NewEntryWithData(ignStrBind)
+		inclStr := widget.NewEntryWithData(inclStrBind)
+		ignExt := widget.NewEntryWithData(ignExtBind)
+		inclExt := widget.NewEntryWithData(inclExtBind)
+
+		ignStrLabel := widget.NewLabel("Ignore String:")
+		inclStrLabel := widget.NewLabel("Include String:")
+		ignExtLabel := widget.NewLabel("Ignore Ext:")
+		inclExtLabel := widget.NewLabel("Include Ext:")
+	*/
+
 	content := container.NewGridWithColumns(2, listPanel, form)
+
 	return content, filterForm, config.Config{}
 }
 
@@ -268,4 +301,12 @@ func SetupLogger(logFilePath string) *slog.Logger {
 	multiWriter := io.MultiWriter(writers...)
 
 	return slog.New(slog.NewJSONHandler(multiWriter, opts))
+}
+
+func bindingStringErr(s string) binding.String {
+	str := binding.NewString()
+	if err := str.Set(s); err != nil {
+		slog.Warn("binding.NewString()", slog.Any("err", err))
+	}
+	return str
 }
