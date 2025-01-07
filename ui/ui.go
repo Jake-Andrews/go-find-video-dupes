@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"os"
 
-	"govdupes/internal/config"
+	"govdupes/internal/application"
 	"govdupes/internal/models"
 
 	"fyne.io/fyne/v2"
@@ -16,16 +16,17 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func CreateUI(videoData [][]*models.VideoData) {
+func CreateUI(application *application.App) {
 	slog.Info("Starting CreateUI")
 
+	// fyne app
 	a := app.New()
-	cfg := &config.Config{}
-	cfg.SetDefaults()
 
-	// copy of the original data so we can re-filter repeatedly hacky
+	// Copy of the original data so we can re-filter repeatedly hacky
+	videoData := [][]*models.VideoData{}
 	originalVideoData := videoData
 
+	// Video rows
 	duplicatesListWidget := NewDuplicatesList(videoData)
 	if duplicatesListWidget == nil {
 		slog.Error("Failed to create DuplicatesList widget")
@@ -34,13 +35,12 @@ func CreateUI(videoData [][]*models.VideoData) {
 	duplicatesTab := container.NewVScroll(duplicatesListWidget)
 	duplicatesTab.SetMinSize(fyne.NewSize(1200, 768))
 
+	// Tabs
 	themeTab := buildThemeTab(a)
 	sortSelectTab := buildSortSelectDeleteTab(duplicatesListWidget, videoData)
 	filterForm, checkWidget := buildFilter(duplicatesListWidget, originalVideoData)
-	configTab := buildConfigTab(cfg, checkWidget)
-
-	searchBtn := widget.NewButtonWithIcon("Search", theme.Icon(theme.IconNameSearch), func() { slog.Info("tapped") })
-	searchTab := container.NewBorder(searchBtn, nil, nil, nil)
+	configTab := buildConfigTab(application.Config, checkWidget)
+	searchTab := buildSearchTab(application, duplicatesListWidget, videoData)
 
 	// Tabs section
 	tabs := container.NewAppTabs(
@@ -87,4 +87,24 @@ func buildThemeTab(a fyne.App) fyne.CanvasObject {
 			a.Settings().SetTheme(&forcedVariant{Theme: theme.DefaultTheme(), isDark: false})
 		}),
 	)
+}
+
+func buildSearchTab(a *application.App, duplicatesListWidget *DuplicatesList, videoData [][]*models.VideoData) *fyne.Container {
+	activity := widget.NewActivity()
+
+	searchBtn := widget.NewButtonWithIcon("Search", theme.Icon(theme.IconNameSearch), func() {
+		slog.Info("Search started!")
+		activity.Start()
+		if vData := a.Search(); vData != nil {
+			videoData = vData
+		} else {
+			videoData = [][]*models.VideoData{}
+		}
+		duplicatesListWidget.SetData(videoData)
+		activity.Stop()
+		activity.Hide()
+	})
+	searchTab := container.NewBorder(searchBtn, nil, nil, nil, activity)
+
+	return searchTab
 }

@@ -1,38 +1,45 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
 	"log/slog"
 	"os"
-	"strconv"
-	"strings"
-	"sync"
+	"os/signal"
+	"syscall"
 
-	"github.com/cespare/xxhash/v2"
-	_ "modernc.org/sqlite"
-
-	"govdupes/internal/config"
-	store "govdupes/internal/db"
-	"govdupes/internal/db/dbstore"
-	"govdupes/internal/db/sqlite"
-	"govdupes/internal/duplicate"
-	"govdupes/internal/filesystem"
-	"govdupes/internal/hash"
-	"govdupes/internal/models"
-	"govdupes/internal/videoprocessor"
-	"govdupes/internal/videoprocessor/ffprobe"
+	"govdupes/internal/application"
 	"govdupes/ui"
+
+	_ "modernc.org/sqlite"
 )
 
+func main() {
+	app, db := application.Setup()
+
+	// Channel to capture OS signals
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
+
+	// Goroutine to handle shutdown
+	go func() {
+		<-signalChan
+		slog.Info("Shutting down gracefully...")
+		if err := db.Close(); err != nil {
+			slog.Error("Error closing the database", slog.Any("error", err))
+		} else {
+			slog.Info("Database connection closed.")
+		}
+		os.Exit(0)
+	}()
+
+	ui.CreateUI(app)
+}
+
+/*
 var wrongArgsMsg = "Error, your input must include only one arg which contains the path to the filedirectory to scan."
 
 func main() {
 	var cfg config.Config
-	cfg.SetDefaults()
+	cfg.ParseArgs()
 
 	logger := config.SetupLogger(cfg.LogFilePath)
 	slog.SetDefault(logger)
@@ -41,7 +48,7 @@ func main() {
 	defer db.Close()
 
 	videoStore := dbstore.NewVideoStore(db)
-	vp := videoprocessor.NewFFmpegInstance(&cfg)
+	vp := videoprocessor.NewFFmpegInstance(cfg)
 
 	dbVideos, err := videoStore.GetAllVideos(context.Background())
 	if err != nil {
@@ -195,7 +202,7 @@ func main() {
 	}
 	slog.Info("Number of duplicate video groups", slog.Int("count", len(duplicateVideoData)))
 
-	ui.CreateUI(duplicateVideoData)
+	config.CreateUI(duplicateVideoData)
 }
 
 // reconcileVideosWithDB returns a subset of 'videosFromFS' that are not already
@@ -432,3 +439,4 @@ func computeXXHashes(videos []*models.Video) []*models.Video {
 	}
 	return validVideos
 }
+*/

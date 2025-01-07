@@ -26,6 +26,7 @@ type Config struct {
 }
 
 func (c *Config) SetDefaults() {
+	slog.Info("Setting default config options")
 	c.StartingDirs = []string{"."}
 	c.DatabasePath = "./videos.db"
 	c.LogFilePath = "app.log"

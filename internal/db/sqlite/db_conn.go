@@ -85,3 +85,7 @@ func InitDB(dbPath string) *sql.DB {
 	slog.Info("Database initialized successfully")
 	return db
 }
+
+func Close(db *sql.DB) error {
+	return db.Close()
+}
