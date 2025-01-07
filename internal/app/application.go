@@ -1,32 +1,24 @@
-package main
+package application
 
 import (
-	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
 	"log/slog"
-	"os"
-	"strconv"
-	"strings"
-	"sync"
-
-	"github.com/cespare/xxhash/v2"
-	_ "modernc.org/sqlite"
 
 	store "govdupes/internal/db"
-	"govdupes/internal/db/dbstore"
-	"govdupes/internal/db/sqlite"
-	"govdupes/internal/duplicate"
-	"govdupes/internal/filesystem"
-	"govdupes/internal/hash"
-	"govdupes/internal/models"
 	"govdupes/internal/videoprocessor"
-	"govdupes/internal/videoprocessor/ffprobe"
 	"govdupes/ui"
 )
 
+type Application struct {
+	cfg        *ui.Config
+	videoStore store.VideoStore
+	vp         videoprocessor.FFmpegWrapper
+}
+
+func (a *Application) Run(cfg *ui.Config, videoStore store.VideoStore) {
+	slog.Info("run")
+}
+
+/*
 var wrongArgsMsg = "Error, your input must include only one arg which contains the path to the filedirectory to scan."
 
 func main() {
@@ -40,7 +32,7 @@ func main() {
 	defer db.Close()
 
 	videoStore := dbstore.NewVideoStore(db)
-	vp := videoprocessor.NewFFmpegInstance(&cfg)
+	vp := videoprocessor.NewFFmpegInstance(cfg)
 
 	dbVideos, err := videoStore.GetAllVideos(context.Background())
 	if err != nil {
@@ -431,3 +423,4 @@ func computeXXHashes(videos []*models.Video) []*models.Video {
 	}
 	return validVideos
 }
+*/

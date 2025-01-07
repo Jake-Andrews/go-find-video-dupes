@@ -25,6 +25,7 @@ func CreateUI(videoData [][]*models.VideoData) {
 	a := app.New()
 
 	cfg := &Config{}
+	// app := application.Application{}
 
 	// copy of the original data so we can re-filter repeatedly hacky
 	originalVideoData := videoData
@@ -42,9 +43,12 @@ func CreateUI(videoData [][]*models.VideoData) {
 	sortSelectTab := buildSortSelectDeleteTab(duplicatesListWidget, videoData)
 	configTab, filterForm := buildConfigTab(duplicatesListWidget, originalVideoData, cfg)
 
+	searchBtn := widget.NewButtonWithIcon("Search", theme.Icon(theme.IconNameSearch), func() { slog.Info("tapped") })
+	searchTab := container.NewBorder(searchBtn, nil, nil, nil)
+
 	// Tabs section
 	tabs := container.NewAppTabs(
-		// container.NewTabItem("Search", searchTab),
+		container.NewTabItem("Search", searchTab),
 		container.NewTabItem("Duplicates", duplicatesTab),
 		container.NewTabItem("Theme", themeTab),
 		container.NewTabItem("Sort/Select/Delete", sortSelectTab),

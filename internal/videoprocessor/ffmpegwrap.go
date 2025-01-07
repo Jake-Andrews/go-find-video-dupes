@@ -16,7 +16,7 @@ type FFmpegWrapper struct {
 	silent bool
 }
 
-func NewFFmpegInstance(cfg ui.Config) *FFmpegWrapper {
+func NewFFmpegInstance(cfg *ui.Config) *FFmpegWrapper {
 	return &FFmpegWrapper{silent: cfg.SilentFFmpeg}
 }
 
