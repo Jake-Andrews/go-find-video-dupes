@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"os"
 
+	"govdupes/internal/config"
 	"govdupes/internal/models"
-	"govdupes/ui"
 
 	ffmpeg "github.com/u2takey/ffmpeg-go"
 )
@@ -16,7 +16,7 @@ type FFmpegWrapper struct {
 	silent bool
 }
 
-func NewFFmpegInstance(cfg *ui.Config) *FFmpegWrapper {
+func NewFFmpegInstance(cfg *config.Config) *FFmpegWrapper {
 	return &FFmpegWrapper{silent: cfg.SilentFFmpeg}
 }
 

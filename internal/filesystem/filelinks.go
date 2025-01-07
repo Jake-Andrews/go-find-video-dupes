@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"govdupes/ui"
+	"govdupes/internal/config"
 )
 
 type FileIdentity struct {
@@ -62,7 +62,7 @@ func IsSymbolicLink(path string) (bool, error) {
 }
 
 // Checks if a file is a hard link or a symbolic link.
-func (ft *FileTracker) FindFileLinks(path string, c ui.Config) (*FileIdentity, error) {
+func (ft *FileTracker) FindFileLinks(path string, c config.Config) (*FileIdentity, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, err

@@ -1,13 +1,10 @@
 package ui
 
 import (
-	"errors"
-	"io"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 
+	"govdupes/internal/config"
 	"govdupes/internal/models"
 
 	"fyne.io/fyne/v2"
@@ -16,11 +13,22 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func buildConfigTab(
-	duplicatesListWidget *DuplicatesList,
-	originalVideoData [][]*models.VideoData,
-	cfg *Config,
-) (fyne.CanvasObject, *fyne.Container) {
+type formStruct struct {
+	DatabasePath     string
+	LogFilePath      string
+	IgnoreStr        string
+	IncludeStr       string
+	IgnoreExt        string
+	IncludeExt       string
+	SavedScreenshots bool
+	AbsPath          bool
+	FollowSymbolic   bool
+	SkipSymbolic     bool
+	SilentFFmpeg     bool
+	FilesizeCutoff   int64
+}
+
+func buildConfigTab(duplicatesListWidget *DuplicatesList, originalVideoData [][]*models.VideoData, cfg *config.Config) (fyne.CanvasObject, *fyne.Container) {
 	// FILTER
 	filterEntry := widget.NewEntry()
 	filterEntry.SetPlaceHolder("Enter path/file search...")
@@ -55,33 +63,7 @@ func buildConfigTab(
 	})
 
 	// REST OF CONFIG (binding settings to widgets)
-	formStruct := struct {
-		DatabasePath     string
-		LogFilePath      string
-		IgnoreStr        string
-		IncludeStr       string
-		IgnoreExt        string
-		IncludeExt       string
-		SavedScreenshots bool
-		AbsPath          bool
-		FollowSymbolic   bool
-		SkipSymbolic     bool
-		SilentFFmpeg     bool
-		FilesizeCutoff   int64
-	}{
-		DatabasePath:     "./videos.db",
-		LogFilePath:      "app.log",
-		IgnoreStr:        "",
-		IncludeStr:       "",
-		IgnoreExt:        "",
-		IncludeExt:       "mp4,m4a,webm",
-		SavedScreenshots: true,
-		AbsPath:          true,
-		FollowSymbolic:   true,
-		SkipSymbolic:     true,
-		SilentFFmpeg:     true,
-		FilesizeCutoff:   0,
-	}
+	formStruct := ConvertConfigToFormStruct(cfg)
 
 	// intermediate struct
 	formData := binding.BindStruct(&formStruct)
@@ -151,7 +133,6 @@ func buildConfigTab(
 		cfg.SkipSymbolicLinks = formStruct.SkipSymbolic
 		cfg.SilentFFmpeg = formStruct.SilentFFmpeg
 		cfg.FilesizeCutoff = formStruct.FilesizeCutoff
-
 		// read out each directory from the binding
 		length := startingDirs.Length()
 		var dirs []string
@@ -162,7 +143,7 @@ func buildConfigTab(
 			}
 		}
 		cfg.StartingDirs = dirs
-		ValidateStartingDirs(cfg)
+		config.ValidateStartingDirs(cfg)
 
 		slog.Info("Updated real config.Config from UI", "cfg", cfg)
 	}
@@ -213,106 +194,19 @@ func createBoundItem(v binding.DataItem) fyne.CanvasObject {
 	}
 }
 
-type Config struct {
-	DatabasePath        string
-	StartingDirs        []string
-	IgnoreStr           []string
-	IncludeStr          []string
-	IgnoreExt           []string
-	IncludeExt          []string
-	FilesizeCutoff      int64 // in bytes
-	SaveSC              bool
-	AbsPath             bool
-	FollowSymbolicLinks bool
-	SkipSymbolicLinks   bool
-	SilentFFmpeg        bool
-	LogFilePath         string
-}
-
-// validateStartingDirs ensures starting directories exist and are actually dirs.
-func ValidateStartingDirs(c *Config) {
-	for i, dir := range c.StartingDirs {
-		f, err := os.Open(dir)
-		if err != nil {
-			slog.Error("Error opening dir",
-				slog.String("dir", dir),
-				slog.Any("error", err))
-			os.Exit(1)
-		}
-
-		abs, err := filepath.Abs(dir)
-		if err != nil {
-			slog.Error("Error getting the absolute path for dir",
-				slog.String("dir", dir),
-				slog.Any("error", err))
-			os.Exit(1)
-		}
-		c.StartingDirs[i] = abs
-
-		fsInfo, err := f.Stat()
-		if errors.Is(err, os.ErrNotExist) {
-			slog.Error("Directory does not exist",
-				slog.String("dir", dir),
-				slog.Any("error", err))
-			os.Exit(1)
-		} else if err != nil {
-			slog.Error("Error calling stat on dir",
-				slog.String("dir", dir),
-				slog.Any("error", err))
-			os.Exit(1)
-		}
-		if !fsInfo.IsDir() {
-			slog.Error("Path is not a valid directory", slog.String("dir", dir))
-			os.Exit(1)
-		}
+func ConvertConfigToFormStruct(config *config.Config) formStruct {
+	return formStruct{
+		DatabasePath:     config.DatabasePath,
+		LogFilePath:      config.LogFilePath,
+		IgnoreStr:        strings.Join(config.IgnoreStr, ","),
+		IncludeStr:       strings.Join(config.IncludeStr, ","),
+		IgnoreExt:        strings.Join(config.IgnoreExt, ","),
+		IncludeExt:       strings.Join(config.IncludeExt, ","),
+		SavedScreenshots: config.SaveSC,
+		AbsPath:          config.AbsPath,
+		FollowSymbolic:   config.FollowSymbolicLinks,
+		SkipSymbolic:     config.SkipSymbolicLinks,
+		SilentFFmpeg:     config.SilentFFmpeg,
+		FilesizeCutoff:   config.FilesizeCutoff,
 	}
-}
-
-func SetupLogger(logFilePath string) *slog.Logger {
-	opts := &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}
-
-	var writers []io.Writer
-	writers = append(writers, os.Stdout)
-
-	if logFilePath != "" {
-		file, err := os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-		if err != nil {
-			slog.Error("Failed to open log file",
-				slog.String("path", logFilePath),
-				slog.Any("error", err))
-			os.Exit(1)
-		}
-		writers = append(writers, file)
-	}
-
-	multiWriter := io.MultiWriter(writers...)
-
-	return slog.New(slog.NewJSONHandler(multiWriter, opts))
-}
-
-func bindingStringErr(s string) binding.String {
-	str := binding.NewString()
-	if err := str.Set(s); err != nil {
-		slog.Warn("binding.NewString()", slog.Any("err", err))
-	}
-	return str
-}
-
-func (c *Config) ParseArgs() {
-	c.StartingDirs = []string{"."}
-	c.DatabasePath = "./videos.db"
-	c.LogFilePath = "app.log"
-	c.IgnoreStr = []string{}
-	c.IncludeStr = []string{}
-	c.IgnoreExt = []string{}
-	c.IncludeExt = []string{"mp4", "m4a", "webm"}
-	c.SaveSC = true
-	c.AbsPath = true
-	c.FollowSymbolicLinks = true
-	c.SkipSymbolicLinks = true
-	c.SilentFFmpeg = true
-	c.FilesizeCutoff = 0
-	ValidateStartingDirs(c)
 }

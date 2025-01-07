@@ -3,18 +3,18 @@ package application
 import (
 	"log/slog"
 
+	"govdupes/internal/config"
 	store "govdupes/internal/db"
 	"govdupes/internal/videoprocessor"
-	"govdupes/ui"
 )
 
 type Application struct {
-	cfg        *ui.Config
+	cfg        *config.Config
 	videoStore store.VideoStore
 	vp         videoprocessor.FFmpegWrapper
 }
 
-func (a *Application) Run(cfg *ui.Config, videoStore store.VideoStore) {
+func (a *Application) Run(cfg *config.Config, videoStore store.VideoStore) {
 	slog.Info("run")
 }
 
@@ -22,10 +22,10 @@ func (a *Application) Run(cfg *ui.Config, videoStore store.VideoStore) {
 var wrongArgsMsg = "Error, your input must include only one arg which contains the path to the filedirectory to scan."
 
 func main() {
-	var cfg ui.Config
+	var cfg config.Config
 	cfg.ParseArgs()
 
-	logger := ui.SetupLogger(cfg.LogFilePath)
+	logger := config.SetupLogger(cfg.LogFilePath)
 	slog.SetDefault(logger)
 
 	db := sqlite.InitDB(cfg.DatabasePath)
@@ -186,7 +186,7 @@ func main() {
 	}
 	slog.Info("Number of duplicate video groups", slog.Int("count", len(duplicateVideoData)))
 
-	ui.CreateUI(duplicateVideoData)
+	config.CreateUI(duplicateVideoData)
 }
 
 // reconcileVideosWithDB returns a subset of 'videosFromFS' that are not already

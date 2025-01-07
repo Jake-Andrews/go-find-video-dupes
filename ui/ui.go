@@ -10,6 +10,7 @@ import (
 	"sort"
 	"time"
 
+	"govdupes/internal/config"
 	"govdupes/internal/models"
 
 	"fyne.io/fyne/v2"
@@ -24,7 +25,8 @@ func CreateUI(videoData [][]*models.VideoData) {
 
 	a := app.New()
 
-	cfg := &Config{}
+	cfg := &config.Config{}
+	cfg.SetDefaults()
 	// app := application.Application{}
 
 	// copy of the original data so we can re-filter repeatedly hacky

@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"govdupes/internal/config"
 	"govdupes/internal/models"
-	"govdupes/ui"
 )
 
-func SearchDirs(c *ui.Config) []*models.Video {
+func SearchDirs(c *config.Config) []*models.Video {
 	slog.Info("Searching directories")
 	videos := make([]*models.Video, 0)
 
@@ -43,7 +43,7 @@ func SearchDirs(c *ui.Config) []*models.Video {
 // check if file name is in ignorestr, if so ignore
 // check if filename is in includestr, if so include consider the file
 // if both includeext/includestr agree then include the file
-func getVideosFromFS(fileSystem fs.FS, c *ui.Config, root string) []*models.Video {
+func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string) []*models.Video {
 	slog.Info("Processing root directory", slog.String("root", root))
 	videos := make([]*models.Video, 0)
 	fileTracker := NewFileTracker()
@@ -166,7 +166,7 @@ func checkValidVideo(path string, fileInfo os.FileInfo) bool {
 	return true
 }
 
-func validExt(path string, c *ui.Config) bool {
+func validExt(path string, c *config.Config) bool {
 	// Extract and normalize the file extension
 	fileExt := strings.ToLower(filepath.Ext(path))
 	if len(fileExt) > 0 {
@@ -196,7 +196,7 @@ func validExt(path string, c *ui.Config) bool {
 	return true
 }
 
-func validFileName(d fs.DirEntry, c *ui.Config) bool {
+func validFileName(d fs.DirEntry, c *config.Config) bool {
 	// Convert file name to lowercase
 	fileName := strings.ToLower(d.Name())
 
