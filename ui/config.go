@@ -68,7 +68,7 @@ func buildConfigTab(duplicatesListWidget *DuplicatesList, originalVideoData [][]
 	form.OnSubmit = func() {
 		slog.Info("Printing form", "formStruct:", formStruct)
 	}
-
+	form.Append("check", checkWidget)
 	// List forms
 	dirStr := binding.NewString()
 	dirEntry := widget.NewEntryWithData(dirStr)
@@ -99,9 +99,13 @@ func buildConfigTab(duplicatesListWidget *DuplicatesList, originalVideoData [][]
 			text := obj.(*fyne.Container).Objects[0].(*widget.Label)
 			text.Bind(f)
 		})
-	listPanel := container.NewBorder(dirEntry, nil, nil, nil, dirList)
-	btns := container.NewHBox(appendBtn, deleteBtn)
-	content := container.NewVBox(checkWidget, form, btns, listPanel)
+
+	startingDirsLabel := widget.NewLabel("Directories to search:")
+	btns := container.NewGridWithColumns(2, appendBtn, deleteBtn)
+	btnsDirEntry := container.NewGridWithRows(3, startingDirsLabel, btns, dirEntry)
+	// dirListWrapper := container.NewWithoutLayout(dirList)
+	listPanel := container.NewBorder(btnsDirEntry, nil, nil, nil, dirList)
+	content := container.NewGridWithColumns(2, listPanel, form)
 	return content, filterForm, config.Config{}
 }
 
