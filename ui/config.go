@@ -28,40 +28,7 @@ type formStruct struct {
 	FilesizeCutoff   int64
 }
 
-func buildConfigTab(duplicatesListWidget *DuplicatesList, originalVideoData [][]*models.VideoData, cfg *config.Config) (fyne.CanvasObject, *fyne.Container) {
-	// FILTER
-	filterEntry := widget.NewEntry()
-	filterEntry.SetPlaceHolder("Enter path/file search...")
-
-	filterButton := widget.NewButton("Apply", func() {
-		slog.Info("Filter applied", slog.String("filter", filterEntry.Text))
-
-		query := parseSearchQuery(filterEntry.Text)
-
-		filteredData := applyFilter(originalVideoData, query)
-
-		duplicatesListWidget.SetData(filteredData)
-	})
-
-	filterForm := container.NewVBox(
-		widget.NewLabel("Filter:"),
-		filterEntry,
-		filterButton,
-	)
-
-	filterForm.Hide()
-	filterVisible := false
-
-	checkWidget := widget.NewCheck("Show Filter Box", func(checked bool) {
-		filterVisible = checked
-		if filterVisible {
-			filterForm.Show()
-		} else {
-			filterForm.Hide()
-		}
-		filterForm.Refresh()
-	})
-
+func buildConfigTab(cfg *config.Config, checkWidget *widget.Check) fyne.CanvasObject {
 	// REST OF CONFIG (binding settings to widgets)
 	formStruct := ConvertConfigToFormStruct(cfg)
 
@@ -148,7 +115,43 @@ func buildConfigTab(duplicatesListWidget *DuplicatesList, originalVideoData [][]
 		slog.Info("Updated real config.Config from UI", "cfg", cfg)
 	}
 
-	return content, filterForm
+	return content
+}
+
+func buildFilter(duplicatesListWidget *DuplicatesList, originalVideoData [][]*models.VideoData) (*fyne.Container, *widget.Check) {
+	// FILTER
+	filterEntry := widget.NewEntry()
+	filterEntry.SetPlaceHolder("Enter path/file search...")
+
+	filterButton := widget.NewButton("Apply", func() {
+		slog.Info("Filter applied", slog.String("filter", filterEntry.Text))
+
+		query := parseSearchQuery(filterEntry.Text)
+
+		filteredData := applyFilter(originalVideoData, query)
+
+		duplicatesListWidget.SetData(filteredData)
+	})
+
+	filterForm := container.NewVBox(
+		widget.NewLabel("Filter:"),
+		filterEntry,
+		filterButton,
+	)
+
+	filterForm.Hide()
+	filterVisible := false
+
+	checkWidget := widget.NewCheck("Show Filter Box", func(checked bool) {
+		filterVisible = checked
+		if filterVisible {
+			filterForm.Show()
+		} else {
+			filterForm.Hide()
+		}
+		filterForm.Refresh()
+	})
+	return filterForm, checkWidget
 }
 
 // Helper function that splits comma-separated strings into slices
