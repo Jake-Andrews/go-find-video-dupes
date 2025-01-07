@@ -1,65 +1,70 @@
-package main
+package application
 
 import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"os"
-	"os/signal"
-	"syscall"
+	"strconv"
+	"strings"
+	"sync"
 
-	"govdupes/internal/application"
-	"govdupes/ui"
+	"govdupes/internal/config"
+	store "govdupes/internal/db"
+	"govdupes/internal/db/dbstore"
+	"govdupes/internal/db/sqlite"
+	"govdupes/internal/duplicate"
+	"govdupes/internal/filesystem"
+	"govdupes/internal/hash"
+	"govdupes/internal/models"
+	"govdupes/internal/videoprocessor"
+	"govdupes/internal/videoprocessor/ffprobe"
 
-	_ "modernc.org/sqlite"
+	"github.com/cespare/xxhash/v2"
 )
 
-func main() {
-	app, db := application.Setup()
-
-	// Channel to capture OS signals
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
-
-	// Goroutine to handle shutdown
-	go func() {
-		<-signalChan
-		slog.Info("Shutting down gracefully...")
-		if err := db.Close(); err != nil {
-			slog.Error("Error closing the database", slog.Any("error", err))
-		} else {
-			slog.Info("Database connection closed.")
-		}
-		os.Exit(0)
-	}()
-
-	ui.CreateUI(app)
+type App struct {
+	Config         *config.Config
+	VideoStore     store.VideoStore
+	VideoProcessor *videoprocessor.FFmpegWrapper
 }
 
-/*
-var wrongArgsMsg = "Error, your input must include only one arg which contains the path to the filedirectory to scan."
+func NewApplication(c *config.Config, vs store.VideoStore, vp *videoprocessor.FFmpegWrapper) *App {
+	return &App{Config: c, VideoStore: vs, VideoProcessor: vp}
+}
 
-func main() {
+func Setup() (*App, *sql.DB) {
+	slog.Info("Starting...")
+
 	var cfg config.Config
-	cfg.ParseArgs()
+	cfg.SetDefaults()
 
 	logger := config.SetupLogger(cfg.LogFilePath)
 	slog.SetDefault(logger)
 
 	db := sqlite.InitDB(cfg.DatabasePath)
-	defer db.Close()
 
-	videoStore := dbstore.NewVideoStore(db)
-	vp := videoprocessor.NewFFmpegInstance(cfg)
+	vs := dbstore.NewVideoStore(db)
+	vp := videoprocessor.NewFFmpegInstance(&cfg)
 
-	dbVideos, err := videoStore.GetAllVideos(context.Background())
+	return NewApplication(&cfg, vs, vp), db
+}
+
+func (a *App) Search() [][]*models.VideoData {
+	dbVideos, err := a.VideoStore.GetAllVideos(context.Background())
 	if err != nil {
 		slog.Error("Error getting videos from DB", slog.Any("error", err))
 		os.Exit(1)
 	}
 
-	fsVideos := filesystem.SearchDirs(&cfg)
+	fsVideos := filesystem.SearchDirs(a.Config)
 	if len(fsVideos) == 0 {
 		slog.Info("No files found in directory. Exiting!")
-		return
+		return nil
 	}
 
 	// Filter out any "files" that are already in DB (based on dev/inode and path)
@@ -153,23 +158,23 @@ func main() {
 		}
 
 		slog.Info("Starting to generate pHashes!")
-		generatePHashes(videosToCreate, vp, videoStore)
+		generatePHashes(videosToCreate, a.VideoProcessor, a.VideoStore)
 		slog.Info("Done generating pHashes!")
 	}
 
-	fVideos, err := videoStore.GetAllVideos(context.Background())
+	fVideos, err := a.VideoStore.GetAllVideos(context.Background())
 	if err != nil {
 		slog.Error("Error retrieving all videos", slog.Any("error", err))
-		return
+		return nil
 	}
 	for _, vid := range fVideos {
 		slog.Info("Video details", "Path", vid.Path)
 	}
 
-	fHashes, err := videoStore.GetAllVideoHashes(context.Background())
+	fHashes, err := a.VideoStore.GetAllVideoHashes(context.Background())
 	if err != nil {
 		slog.Error("Error retrieving all video hashes", slog.Any("error", err))
-		return
+		return nil
 	}
 	for _, vhash := range fHashes {
 		slog.Info("Videohash", "vhash.ID", vhash.ID, "vhash.bucket", vhash.Bucket)
@@ -191,18 +196,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := videoStore.BulkUpdateVideohashes(context.Background(), fHashes); err != nil {
+	if err := a.VideoStore.BulkUpdateVideohashes(context.Background(), fHashes); err != nil {
 		slog.Error("Error in BulkUpdateVideohashes", slog.Any("error", err))
 	}
 
-	duplicateVideoData, err := videoStore.GetDuplicateVideoData(context.Background())
+	duplicateVideoData, err := a.VideoStore.GetDuplicateVideoData(context.Background())
 	if err != nil {
 		slog.Error("Error getting duplicate video data", slog.Any("error", err))
-		return
+		return nil
 	}
 	slog.Info("Number of duplicate video groups", slog.Int("count", len(duplicateVideoData)))
-
-	config.CreateUI(duplicateVideoData)
+	return duplicateVideoData
 }
 
 // reconcileVideosWithDB returns a subset of 'videosFromFS' that are not already
@@ -439,4 +443,3 @@ func computeXXHashes(videos []*models.Video) []*models.Video {
 	}
 	return validVideos
 }
-*/

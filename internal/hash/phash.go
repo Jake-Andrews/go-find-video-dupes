@@ -152,4 +152,3 @@ func ConvertImagesToBase64(images []image.Image) ([]string, error) {
 	}
 	return encodedStrings, nil
 }
-

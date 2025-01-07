@@ -15,7 +15,7 @@ func SearchDirs(c *config.Config) []*models.Video {
 	slog.Info("Searching directories")
 	videos := make([]*models.Video, 0)
 
-	for _, dir := range c.StartingDirs.Values {
+	for _, dir := range c.StartingDirs {
 		dir = filepath.Clean(strings.TrimSuffix(dir, "/"))
 		slog.Info("Searching recursively", slog.String("starting_dir", dir))
 		info, err := os.Stat(dir)
@@ -52,6 +52,7 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string) []*models.
 		fileSystem,
 		".",
 		func(path string, d fs.DirEntry, err error) error {
+			slog.Info("Processing file", "file", path)
 			if err != nil {
 				slog.Error("Error walking through filesystem", slog.Any("error", err))
 				return err
@@ -173,9 +174,9 @@ func validExt(path string, c *config.Config) bool {
 	}
 
 	// Check if this extension is included
-	if len(c.IncludeExt.Values) > 0 {
+	if len(c.IncludeExt) > 0 {
 		included := false
-		for _, inc := range c.IncludeExt.Values {
+		for _, inc := range c.IncludeExt {
 			if strings.EqualFold(fileExt, strings.ToLower(inc)) {
 				included = true
 				break
@@ -187,7 +188,7 @@ func validExt(path string, c *config.Config) bool {
 	}
 
 	// Check if this extension is ignored
-	for _, ig := range c.IgnoreExt.Values {
+	for _, ig := range c.IgnoreExt {
 		if strings.EqualFold(fileExt, strings.ToLower(ig)) {
 			return false
 		}
@@ -200,15 +201,15 @@ func validFileName(d fs.DirEntry, c *config.Config) bool {
 	fileName := strings.ToLower(d.Name())
 
 	// Check if file name is ignored
-	for _, ig := range c.IgnoreStr.Values {
+	for _, ig := range c.IgnoreStr {
 		if strings.Contains(fileName, strings.ToLower(ig)) {
 			return false
 		}
 	}
 
 	// Check if file name is included (if includes are provided)
-	if len(c.IncludeStr.Values) > 0 {
-		for _, inc := range c.IncludeStr.Values {
+	if len(c.IncludeStr) > 0 {
+		for _, inc := range c.IncludeStr {
 			if strings.Contains(fileName, strings.ToLower(inc)) {
 				// Found an include match, so we can allow it
 				return true
