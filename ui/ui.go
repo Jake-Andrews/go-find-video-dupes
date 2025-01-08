@@ -5,13 +5,16 @@ import (
 	"image/color"
 	"log/slog"
 	"os"
+	"time"
 
 	"govdupes/internal/application"
 	"govdupes/internal/models"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
@@ -21,6 +24,7 @@ func CreateUI(application *application.App) {
 
 	// fyne app
 	a := app.New()
+	window := a.NewWindow("govdupes")
 
 	// Copy of the original data so we can re-filter repeatedly hacky
 	videoData := [][]*models.VideoData{}
@@ -40,7 +44,7 @@ func CreateUI(application *application.App) {
 	sortSelectTab := buildSortSelectDeleteTab(duplicatesListWidget, videoData)
 	filterForm, checkWidget := buildFilter(duplicatesListWidget, originalVideoData)
 	configTab := buildConfigTab(application.Config, checkWidget)
-	searchTab := buildSearchTab(application, duplicatesListWidget, videoData)
+	searchTab := buildSearchTab(application, duplicatesListWidget, videoData, window)
 
 	// Tabs section
 	tabs := container.NewAppTabs(
@@ -58,8 +62,6 @@ func CreateUI(application *application.App) {
 		filterForm,
 	)
 
-	// Main window setup
-	window := a.NewWindow("govdupes")
 	window.SetContent(mainContent)
 	window.SetMaster()
 	window.Resize(fyne.NewSize(1300, 900))
@@ -89,22 +91,60 @@ func buildThemeTab(a fyne.App) fyne.CanvasObject {
 	)
 }
 
-func buildSearchTab(a *application.App, duplicatesListWidget *DuplicatesList, videoData [][]*models.VideoData) *fyne.Container {
-	activity := widget.NewActivity()
-
-	searchBtn := widget.NewButtonWithIcon("Search", theme.Icon(theme.IconNameSearch), func() {
+func buildSearchTab(a *application.App, duplicatesListWidget *DuplicatesList, videoData [][]*models.VideoData, w fyne.Window) *fyne.Container {
+	searchBtn := container.NewCenter(widget.NewButtonWithIcon("Search", theme.Icon(theme.IconNameSearch), func() {
 		slog.Info("Search started!")
-		activity.Start()
+
+		clockWidget := widget.NewLabel("")
+
+		prop := canvas.NewRectangle(color.Transparent)
+		prop.SetMinSize(fyne.NewSize(50, 50))
+		d := dialog.NewCustomWithoutButtons("Searching...", container.NewStack(prop, clockWidget), w)
+
+		c := Clock{}
+		c.set()
+		d.Show()
+
+		stopChan := make(chan struct{})
+		go func() {
+			ticker := time.NewTicker(time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					c.update(clockWidget)
+				case <-stopChan:
+					return
+				}
+			}
+		}()
+
 		if vData := a.Search(); vData != nil {
 			videoData = vData
 		} else {
 			videoData = [][]*models.VideoData{}
 		}
+		close(stopChan)
 		duplicatesListWidget.SetData(videoData)
-		activity.Stop()
-		activity.Hide()
-	})
-	searchTab := container.NewBorder(searchBtn, nil, nil, nil, activity)
+
+		d.Hide()
+	}))
+
+	searchTab := container.NewBorder(searchBtn, nil, nil, nil)
 
 	return searchTab
+}
+
+type Clock struct {
+	t time.Time
+}
+
+func (c *Clock) set() {
+	c.t = time.Now()
+}
+
+func (c *Clock) update(clock *widget.Label) {
+	tElapsed := time.Since(c.t)
+	tStr := formatDuration(float32(tElapsed.Seconds()))
+	clock.SetText(tStr)
 }
