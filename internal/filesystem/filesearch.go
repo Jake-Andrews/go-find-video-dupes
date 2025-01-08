@@ -11,8 +11,15 @@ import (
 	"govdupes/internal/models"
 )
 
-func SearchDirs(c *config.Config) []*models.Video {
+var (
+	fileCount     int
+	acceptedFiles int
+)
+
+func SearchDirs(c *config.Config, onFileFound func(int, int)) []*models.Video {
 	slog.Info("Searching directories")
+	fileCount = 0
+	acceptedFiles = 0
 	videos := make([]*models.Video, 0)
 
 	for _, dir := range c.StartingDirs {
@@ -28,7 +35,7 @@ func SearchDirs(c *config.Config) []*models.Video {
 			continue
 		}
 		fileSystem := os.DirFS(dir)
-		videos = append(videos, getVideosFromFS(fileSystem, c, dir)...)
+		videos = append(videos, getVideosFromFS(fileSystem, c, dir, onFileFound)...)
 	}
 
 	if len(videos) == 0 {
@@ -43,7 +50,7 @@ func SearchDirs(c *config.Config) []*models.Video {
 // check if file name is in ignorestr, if so ignore
 // check if filename is in includestr, if so include consider the file
 // if both includeext/includestr agree then include the file
-func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string) []*models.Video {
+func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string, onFileFound func(int, int)) []*models.Video {
 	slog.Info("Processing root directory", slog.String("root", root))
 	videos := make([]*models.Video, 0)
 	fileTracker := NewFileTracker()
@@ -52,6 +59,9 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string) []*models.
 		fileSystem,
 		".",
 		func(path string, d fs.DirEntry, err error) error {
+			fileCount++
+			onFileFound(fileCount, acceptedFiles)
+
 			slog.Info("Processing file", "file", path)
 			if err != nil {
 				slog.Error("Error walking through filesystem", slog.Any("error", err))
@@ -95,12 +105,15 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string) []*models.
 				return nil
 			}
 
+			acceptedFiles++
 			video := createVideo(path, fileInfo, *fileID)
 			videos = append(videos, &video)
+			onFileFound(fileCount, acceptedFiles)
 			return nil
 		},
 	)
 
+	onFileFound(fileCount, acceptedFiles)
 	if walkDirErr != nil {
 		slog.Error("Error walking through directories", slog.Any("error", walkDirErr))
 	}

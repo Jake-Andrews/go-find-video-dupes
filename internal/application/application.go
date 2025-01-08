@@ -54,14 +54,23 @@ func Setup() (*App, *sql.DB) {
 	return NewApplication(&cfg, vs, vp), db
 }
 
-func (a *App) Search() [][]*models.VideoData {
+func (a *App) Search(f *models.FilesearchUI) [][]*models.VideoData {
 	dbVideos, err := a.VideoStore.GetAllVideos(context.Background())
 	if err != nil {
 		slog.Error("Error getting videos from DB", slog.Any("error", err))
 		os.Exit(1)
 	}
 
-	fsVideos := filesystem.SearchDirs(a.Config)
+	fsVideos := filesystem.SearchDirs(a.Config, func(a int, b int) {
+		err := f.FileCount.Set(fmt.Sprintf("%d files processed...", a))
+		if err != nil {
+			slog.Warn("Issue setting fileCount", "fileCount", a)
+		}
+		err = f.AcceptedFiles.Set(fmt.Sprintf("%d files processed...", b))
+		if err != nil {
+			slog.Warn("Issue setting AcceptedFiles", "AcceptedFiles", b)
+		}
+	})
 	if len(fsVideos) == 0 {
 		slog.Info("No files found in directory. Exiting!")
 		return nil

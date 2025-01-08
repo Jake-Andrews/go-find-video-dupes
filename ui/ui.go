@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"fmt"
 	"image/color"
 	"log/slog"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -92,14 +94,21 @@ func buildThemeTab(a fyne.App) fyne.CanvasObject {
 }
 
 func buildSearchTab(a *application.App, duplicatesListWidget *DuplicatesList, videoData [][]*models.VideoData, w fyne.Window) *fyne.Container {
+	fileCount := binding.NewString()
+	acceptedFiles := binding.NewString()
+	fileSearchUI := models.FilesearchUI{FileCount: fileCount, AcceptedFiles: acceptedFiles}
+
+	labelFileCount := widget.NewLabelWithData(fileCount)
+	labelAcceptedFiles := widget.NewLabelWithData(acceptedFiles)
+
 	searchBtn := container.NewCenter(widget.NewButtonWithIcon("Search", theme.Icon(theme.IconNameSearch), func() {
 		slog.Info("Search started!")
 
 		clockWidget := widget.NewLabel("")
 
 		prop := canvas.NewRectangle(color.Transparent)
-		prop.SetMinSize(fyne.NewSize(50, 50))
-		d := dialog.NewCustomWithoutButtons("Searching...", container.NewStack(prop, clockWidget), w)
+		prop.SetMinSize(fyne.NewSize(400, 400))
+		d := dialog.NewCustomWithoutButtons("Searching...", container.NewGridWithRows(4, prop, clockWidget, labelFileCount, labelAcceptedFiles), w)
 
 		c := Clock{}
 		c.set()
@@ -119,7 +128,7 @@ func buildSearchTab(a *application.App, duplicatesListWidget *DuplicatesList, vi
 			}
 		}()
 
-		if vData := a.Search(); vData != nil {
+		if vData := a.Search(&fileSearchUI); vData != nil {
 			videoData = vData
 		} else {
 			videoData = [][]*models.VideoData{}
@@ -146,5 +155,5 @@ func (c *Clock) set() {
 func (c *Clock) update(clock *widget.Label) {
 	tElapsed := time.Since(c.t)
 	tStr := formatDuration(float32(tElapsed.Seconds()))
-	clock.SetText(tStr)
+	clock.SetText(fmt.Sprintf("Time elapsed: %s", tStr))
 }
