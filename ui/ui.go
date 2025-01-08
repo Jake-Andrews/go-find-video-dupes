@@ -93,9 +93,24 @@ func buildThemeTab(a fyne.App) fyne.CanvasObject {
 }
 
 func buildSearchTab(a *application.App, duplicatesListWidget *DuplicatesList, videoData [][]*models.VideoData, w fyne.Window) *fyne.Container {
+	getFileInfoProgress := binding.NewFloat()
+	getInfoBar := widget.NewProgressBarWithData(getFileInfoProgress)
+	getInfoBar.Bind(getFileInfoProgress)
+
+	getInfoLabel := widget.NewLabel("GetInfo Progress:")
+	getInfoLabelBar := container.NewGridWithColumns(2, getInfoLabel, getInfoBar)
+
+	genPHashesProgress := binding.NewFloat()
+	genPHashesBar := widget.NewProgressBarWithData(genPHashesProgress)
+	genPHashesBar.Bind(genPHashesProgress)
+
+	genPHashesLabel := widget.NewLabel("Genetate PHashes Progress:")
+	genPHashesLabelBar := container.NewGridWithColumns(2, genPHashesLabel, genPHashesBar)
+
 	fileCount := binding.NewString()
 	acceptedFiles := binding.NewString()
-	fileSearchUI := models.FilesearchUI{FileCount: fileCount, AcceptedFiles: acceptedFiles}
+
+	fileSearchUI := models.FilesearchUI{FileCount: fileCount, AcceptedFiles: acceptedFiles, GetFileInfoProgress: getFileInfoProgress, GenPHashesProgress: genPHashesProgress}
 
 	labelFileCount := widget.NewLabelWithData(fileCount)
 	labelAcceptedFiles := widget.NewLabelWithData(acceptedFiles)
@@ -107,7 +122,7 @@ func buildSearchTab(a *application.App, duplicatesListWidget *DuplicatesList, vi
 
 		// prop := canvas.NewRectangle(color.Transparent)
 		// prop.SetMinSize(fyne.NewSize(150, 150))
-		d := dialog.NewCustomWithoutButtons("Searching...", container.NewVBox(clockWidget, labelFileCount, labelAcceptedFiles), w)
+		d := dialog.NewCustomWithoutButtons("Searching...", container.NewVBox(clockWidget, labelFileCount, labelAcceptedFiles, getInfoLabelBar, genPHashesLabelBar), w)
 
 		c := Clock{}
 		c.set()

@@ -24,6 +24,7 @@ import (
 	"govdupes/internal/videoprocessor"
 	"govdupes/internal/videoprocessor/ffprobe"
 
+	"fyne.io/fyne/v2/data/binding"
 	"github.com/cespare/xxhash/v2"
 )
 
@@ -82,7 +83,18 @@ func (a *App) Search(f *models.FilesearchUI) [][]*models.VideoData {
 	if len(videosNotInDB) != 0 {
 
 		validVideos := make([]*models.Video, 0, len(videosNotInDB))
-		for _, vid := range videosNotInDB {
+		l := len(videosNotInDB)
+		for i, vid := range videosNotInDB {
+			// UI
+			progress := float64(i) / float64(l)
+			if err := f.GetFileInfoProgress.Set(progress); err != nil {
+				slog.Error("failed to set file info progress",
+					"video", vid,
+					"progress", progress,
+					"error", err,
+				)
+			}
+
 			if err := ffprobe.GetVideoInfo(vid); err != nil {
 				vid.Corrupted = true
 				slog.Warn("Skipping corrupted file",
@@ -92,6 +104,7 @@ func (a *App) Search(f *models.FilesearchUI) [][]*models.VideoData {
 			}
 			validVideos = append(validVideos, vid)
 		}
+		f.GetFileInfoProgress.Set(1.0)
 
 		// Build DB lookups for device/inode and size/xxhash
 		deviceInodeToDBVideo := make(map[[2]uint64]*models.Video, len(dbVideos))
@@ -167,7 +180,7 @@ func (a *App) Search(f *models.FilesearchUI) [][]*models.VideoData {
 		}
 
 		slog.Info("Starting to generate pHashes!")
-		generatePHashes(videosToCreate, a.VideoProcessor, a.VideoStore)
+		generatePHashes(videosToCreate, a.VideoProcessor, a.VideoStore, f.GenPHashesProgress)
 		slog.Info("Done generating pHashes!")
 	}
 
@@ -319,9 +332,12 @@ func findMatchingVideo(
 	return nil, false
 }
 
-func generatePHashes(videosToCreate [][]*models.Video, vp *videoprocessor.FFmpegWrapper, videoStore store.VideoStore) {
-	for _, group := range videosToCreate {
+func generatePHashes(videosToCreate [][]*models.Video, vp *videoprocessor.FFmpegWrapper, videoStore store.VideoStore, PHasheProgress binding.Float) {
+	videosToCreateLen := len(videosToCreate)
+	for i, group := range videosToCreate {
 		slog.Debug("Processing group", slog.Int("groupSize", len(group)))
+		progress := float64(i) / float64(videosToCreateLen)
+		PHasheProgress.Set(progress)
 
 		// If the first in the group already has a hash, reuse it
 		if group[0].FKVideoVideohash != 0 {
@@ -357,6 +373,7 @@ func generatePHashes(videosToCreate [][]*models.Video, vp *videoprocessor.FFmpeg
 				slog.String("pHash", pHash.HashValue))
 		}
 	}
+	PHasheProgress.Set(1.0)
 }
 
 func generatePHashesParallel(videosToCreate [][]*models.Video, vp *videoprocessor.FFmpegWrapper, videoStore store.VideoStore) {
