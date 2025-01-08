@@ -13,7 +13,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
@@ -106,9 +105,9 @@ func buildSearchTab(a *application.App, duplicatesListWidget *DuplicatesList, vi
 
 		clockWidget := widget.NewLabel("")
 
-		prop := canvas.NewRectangle(color.Transparent)
-		prop.SetMinSize(fyne.NewSize(400, 400))
-		d := dialog.NewCustomWithoutButtons("Searching...", container.NewGridWithRows(4, prop, clockWidget, labelFileCount, labelAcceptedFiles), w)
+		// prop := canvas.NewRectangle(color.Transparent)
+		// prop.SetMinSize(fyne.NewSize(150, 150))
+		d := dialog.NewCustomWithoutButtons("Searching...", container.NewVBox(clockWidget, labelFileCount, labelAcceptedFiles), w)
 
 		c := Clock{}
 		c.set()

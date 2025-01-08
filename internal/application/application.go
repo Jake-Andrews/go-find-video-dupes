@@ -62,11 +62,11 @@ func (a *App) Search(f *models.FilesearchUI) [][]*models.VideoData {
 	}
 
 	fsVideos := filesystem.SearchDirs(a.Config, func(a int, b int) {
-		err := f.FileCount.Set(fmt.Sprintf("%d files processed...", a))
+		err := f.FileCount.Set(fmt.Sprintf("%d files found...", a))
 		if err != nil {
 			slog.Warn("Issue setting fileCount", "fileCount", a)
 		}
-		err = f.AcceptedFiles.Set(fmt.Sprintf("%d files processed...", b))
+		err = f.AcceptedFiles.Set(fmt.Sprintf("%d files found...", b))
 		if err != nil {
 			slog.Warn("Issue setting AcceptedFiles", "AcceptedFiles", b)
 		}
