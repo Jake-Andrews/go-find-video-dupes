@@ -16,7 +16,7 @@ var (
 	acceptedFiles int
 )
 
-func SearchDirs(c *config.Config, onFileFound func(int, int)) []*models.Video {
+func SearchDirs(c *config.Config, onFileFound func(int), onFileAccepted func(int)) []*models.Video {
 	slog.Info("Searching directories")
 	fileCount = 0
 	acceptedFiles = 0
@@ -35,7 +35,7 @@ func SearchDirs(c *config.Config, onFileFound func(int, int)) []*models.Video {
 			continue
 		}
 		fileSystem := os.DirFS(dir)
-		videos = append(videos, getVideosFromFS(fileSystem, c, dir, onFileFound)...)
+		videos = append(videos, getVideosFromFS(fileSystem, c, dir, onFileFound, onFileAccepted)...)
 	}
 
 	if len(videos) == 0 {
@@ -50,7 +50,7 @@ func SearchDirs(c *config.Config, onFileFound func(int, int)) []*models.Video {
 // check if file name is in ignorestr, if so ignore
 // check if filename is in includestr, if so include consider the file
 // if both includeext/includestr agree then include the file
-func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string, onFileFound func(int, int)) []*models.Video {
+func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string, onFileFound func(int), onFileAccepted func(int)) []*models.Video {
 	slog.Info("Processing root directory", slog.String("root", root))
 	videos := make([]*models.Video, 0)
 	fileTracker := NewFileTracker()
@@ -60,7 +60,7 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string, onFileFoun
 		".",
 		func(path string, d fs.DirEntry, err error) error {
 			fileCount++
-			onFileFound(fileCount, acceptedFiles)
+			onFileFound(fileCount)
 
 			slog.Info("Processing file", "file", path)
 			if err != nil {
@@ -105,15 +105,15 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string, onFileFoun
 				return nil
 			}
 
-			acceptedFiles++
 			video := createVideo(path, fileInfo, *fileID)
 			videos = append(videos, &video)
-			onFileFound(fileCount, acceptedFiles)
+			acceptedFiles++
+			onFileAccepted(acceptedFiles)
+
 			return nil
 		},
 	)
 
-	onFileFound(fileCount, acceptedFiles)
 	if walkDirErr != nil {
 		slog.Error("Error walking through directories", slog.Any("error", walkDirErr))
 	}

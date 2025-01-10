@@ -7,13 +7,30 @@ import (
 	"syscall"
 
 	"govdupes/internal/application"
+	"govdupes/internal/config"
+	"govdupes/internal/db/dbstore"
+	"govdupes/internal/db/sqlite"
+	"govdupes/internal/videoprocessor"
+	"govdupes/internal/vm/viewmodel"
 	"govdupes/ui"
 
 	_ "modernc.org/sqlite"
 )
 
 func main() {
-	app, db := application.Setup()
+	slog.Info("Starting...")
+
+	var cfg config.Config
+	cfg.SetDefaults()
+	logger := config.SetupLogger(cfg.LogFilePath)
+	slog.SetDefault(logger)
+
+	db := sqlite.InitDB(cfg.DatabasePath)
+	vp := videoprocessor.NewFFmpegInstance(&cfg)
+	vs := dbstore.NewVideoStore(db)
+
+	a := application.NewApplication(&cfg, vs, vp)
+	vm := viewmodel.NewViewModel(a)
 
 	// Channel to capture OS signals
 	signalChan := make(chan os.Signal, 1)
@@ -31,7 +48,7 @@ func main() {
 		os.Exit(0)
 	}()
 
-	ui.CreateUI(app)
+	ui.CreateUI(a, vm)
 }
 
 /*

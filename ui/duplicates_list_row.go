@@ -1,9 +1,11 @@
-// DuplicatesListRow.go
+// duplicates_list_row.go
 package ui
 
 import (
 	"fmt"
 	"image/color"
+
+	"govdupes/internal/models"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -12,14 +14,16 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// A single row in the DuplicatesList
+// custom widget for each row.
 type DuplicatesListRow struct {
 	widget.BaseWidget
 
-	// header row for columns
+	onTapped func(itemID int, selected bool)
+	itemID   int
+	selected bool
+
+	// columns header row
 	columnsHeaderContainer *fyne.Container
-	fileSizes              *canvas.Text
-	fileNum                *canvas.Text
 
 	// group header row
 	groupHeaderContainer *fyne.Container
@@ -31,18 +35,13 @@ type DuplicatesListRow struct {
 	statsLabel          *fyne.Container
 	codecsText          *canvas.Text
 	linksLabel          *fyne.Container
+	videoLayout         *fyne.Container
 
-	videoLayout *fyne.Container
-
+	// So we know which layout is showing
 	isColumnsHeader bool
 	isGroupHeader   bool
-	selected        bool
-
-	onTapped func(itemID int, selected bool)
-	itemID   int
 }
 
-// NewDuplicatesListRow constructs a row with sub-elements for each usage scenario.
 func NewDuplicatesListRow(onTapped func(itemID int, selected bool)) *DuplicatesListRow {
 	row := &DuplicatesListRow{
 		onTapped: onTapped,
@@ -76,13 +75,9 @@ func NewDuplicatesListRow(onTapped func(itemID int, selected bool)) *DuplicatesL
 		color.RGBA{255, 0, 255, 255},
 	)
 
+	columnsHeader := container.NewHBox(col1Header, col2Header, col3Header, col4Header, col5Header)
 	row.columnsHeaderContainer = wrapWithBorder(
-		container.NewHBox(col1Header, col2Header, col3Header, col4Header, col5Header),
-		color.RGBA{128, 128, 128, 255},
-	)
-
-	row.columnsHeaderContainer = wrapWithBorder(
-		container.NewVBox(row.columnsHeaderContainer),
+		container.NewVBox(columnsHeader),
 		color.RGBA{128, 128, 128, 255},
 	)
 
@@ -94,11 +89,6 @@ func NewDuplicatesListRow(onTapped func(itemID int, selected bool)) *DuplicatesL
 		container.New(layout.NewGridWrapLayout(fyne.NewSize(1200, 50)), row.groupHeaderText),
 		color.RGBA{128, 128, 128, 255},
 	)
-	row.fileSizes = canvas.NewText("", color.White)
-	row.fileSizes.Alignment = fyne.TextAlignCenter
-
-	row.fileNum = canvas.NewText("", color.White)
-	row.fileNum.Alignment = fyne.TextAlignCenter
 
 	// Video row
 	row.screenshotContainer = wrapWithBorder(
@@ -144,23 +134,7 @@ func NewDuplicatesListRow(onTapped func(itemID int, selected bool)) *DuplicatesL
 	return row
 }
 
-func newCenteredTruncatedText(text string) *canvas.Text {
-	txt := canvas.NewText(text, color.White)
-	txt.Alignment = fyne.TextAlignCenter
-	return txt
-}
-
-func newLeftAlignedContainer(obj fyne.CanvasObject) *fyne.Container {
-	return container.NewVBox(layout.NewSpacer(), obj, layout.NewSpacer())
-}
-
-func wrapWithBorder(obj fyne.CanvasObject, borderColor color.Color) *fyne.Container {
-	border := canvas.NewRectangle(borderColor)
-	border.StrokeColor = borderColor
-	border.StrokeWidth = 2
-	return container.NewBorder(border, border, border, border, obj)
-}
-
+// toggles selection for a video row.
 func (r *DuplicatesListRow) Tapped(_ *fyne.PointEvent) {
 	if r.isColumnsHeader || r.isGroupHeader {
 		return
@@ -174,7 +148,6 @@ func (r *DuplicatesListRow) Tapped(_ *fyne.PointEvent) {
 
 func (r *DuplicatesListRow) CreateRenderer() fyne.WidgetRenderer {
 	bg := canvas.NewRectangle(r.backgroundColor())
-
 	content := container.NewStack(
 		bg,
 		container.NewVBox(
@@ -183,7 +156,6 @@ func (r *DuplicatesListRow) CreateRenderer() fyne.WidgetRenderer {
 			r.videoLayout,
 		),
 	)
-
 	return &duplicatesListRowRenderer{
 		row:        r,
 		background: bg,
@@ -191,14 +163,8 @@ func (r *DuplicatesListRow) CreateRenderer() fyne.WidgetRenderer {
 	}
 }
 
-func (r *DuplicatesListRow) backgroundColor() color.Color {
-	if r.selected {
-		return color.RGBA{R: 173, G: 216, B: 230, A: 128}
-	}
-	return color.RGBA{0, 0, 0, 0}
-}
-
-func (r *DuplicatesListRow) Update(item duplicateListItem) {
+// sets the row’s fields based on the item from the VM.
+func (r *DuplicatesListRow) Update(item models.DuplicateListItemViewModel) {
 	r.isColumnsHeader = item.IsColumnsHeader
 	r.isGroupHeader = item.IsGroupHeader
 	r.selected = item.Selected
@@ -220,43 +186,20 @@ func (r *DuplicatesListRow) Update(item duplicateListItem) {
 		r.videoLayout.Show()
 		r.updateVideoRow(item)
 	}
-
 	r.Refresh()
 }
 
-// formatFileSize displays size in GB if >= 1GB, otherwise MB
-func formatFileSize(sizeBytes int64) string {
-	const (
-		MB = 1024.0 * 1024.0
-		GB = 1024.0 * 1024.0 * 1024.0
-	)
-	gbVal := float64(sizeBytes) / GB
-	if gbVal >= 1.0 {
-		return fmt.Sprintf("%.2f GB", gbVal)
+func (r *DuplicatesListRow) backgroundColor() color.Color {
+	if r.selected {
+		return color.RGBA{R: 173, G: 216, B: 230, A: 128} // light blue
 	}
-	mbVal := float64(sizeBytes) / MB
-	return fmt.Sprintf("%.2f MB", mbVal)
+	return color.RGBA{0, 0, 0, 0} // transparent
 }
 
-// formatDuration returns a string hh:mm:ss from a float duration in seconds
-func formatDuration(seconds float32) string {
-	hours := int(seconds) / 3600
-	mins := (int(seconds) % 3600) / 60
-	secs := int(seconds) % 60
-	return fmt.Sprintf("%02d:%02d:%02d", hours, mins, secs)
-}
-
-func newLeftAlignedCanvasText(text string, clr color.Color) *canvas.Text {
-	txt := canvas.NewText(text, clr)
-	txt.Alignment = fyne.TextAlignLeading
-	return txt
-}
-
-func (r *DuplicatesListRow) updateVideoRow(item duplicateListItem) {
+func (r *DuplicatesListRow) updateVideoRow(item models.DuplicateListItemViewModel) {
 	vd := item.VideoData
 	if vd == nil {
-		r.pathText.Text = "(no data)"
-		r.pathText.Refresh()
+		r.pathText.SetText("(no data)")
 		return
 	}
 
@@ -276,11 +219,10 @@ func (r *DuplicatesListRow) updateVideoRow(item duplicateListItem) {
 	r.screenshotContainer.Refresh()
 
 	// Path
-	r.pathText.Text = vd.Video.Path
-	r.pathText.Refresh()
+	r.pathText.SetText(vd.Video.Path)
 
 	// Stats
-	statsObjects := []fyne.CanvasObject{
+	r.statsLabel.Objects = []fyne.CanvasObject{
 		layout.NewSpacer(),
 		newLeftAlignedCanvasText(formatFileSize(vd.Video.Size), color.White),
 		newLeftAlignedCanvasText(fmt.Sprintf("%.2f Mbps", float64(vd.Video.BitRate)/1_048_576.0), color.White),
@@ -289,15 +231,14 @@ func (r *DuplicatesListRow) updateVideoRow(item duplicateListItem) {
 		newLeftAlignedCanvasText(formatDuration(vd.Video.Duration), color.White),
 		layout.NewSpacer(),
 	}
-	r.statsLabel.Objects = statsObjects
 	r.statsLabel.Refresh()
 
-	// Codecs column
+	// Codecs
 	r.codecsText.Text = fmt.Sprintf("%s / %s", vd.Video.VideoCodec, vd.Video.AudioCodec)
 	r.codecsText.Refresh()
 
-	// Links column
-	linksObjects := []fyne.CanvasObject{
+	// Links
+	r.linksLabel.Objects = []fyne.CanvasObject{
 		layout.NewSpacer(),
 		newLeftAlignedCanvasText(fmt.Sprintf("Symbolic: %t", vd.Video.IsSymbolicLink), color.White),
 		newLeftAlignedCanvasText(fmt.Sprintf("Symbolic: %q", vd.Video.SymbolicLink), color.White),
@@ -305,9 +246,7 @@ func (r *DuplicatesListRow) updateVideoRow(item duplicateListItem) {
 		newLeftAlignedCanvasText(fmt.Sprintf("#Hard: %d", vd.Video.NumHardLinks), color.White),
 		layout.NewSpacer(),
 	}
-	r.linksLabel.Objects = linksObjects
 	r.linksLabel.Refresh()
-
 	r.videoLayout.Refresh()
 }
 
@@ -318,31 +257,18 @@ type duplicatesListRowRenderer struct {
 }
 
 func (r *duplicatesListRowRenderer) Layout(size fyne.Size) {
-	// This is called by Fyne whenever the row is resized
-	// log.Println("Row Layout: wanted height =", size.Height)
-	// log.Println("pathText.MinSize().Height =", r.row.pathText.MinSize().Height)
-
 	r.background.Resize(size)
-
-	// Adjust position to center content vertically
 	contentHeight := r.container.MinSize().Height
 	offsetY := (size.Height - contentHeight) / 2
-
 	r.container.Move(fyne.NewPos(0, offsetY))
 	r.container.Resize(fyne.NewSize(size.Width, contentHeight))
 }
 
 func (r *duplicatesListRowRenderer) MinSize() fyne.Size {
-	// For column or group headers, fixed height 50
-	if r.row.isGroupHeader {
-		return fyne.NewSize(1200, 50)
-	} else if r.row.isColumnsHeader {
+	if r.row.isColumnsHeader || r.row.isGroupHeader {
 		return fyne.NewSize(1200, 50)
 	}
-
-	// For video rows, ensure at least 148
-	contentHeight := r.row.pathText.MinSize().Height
-	return fyne.NewSize(1200, fyne.Max(148, contentHeight))
+	return fyne.NewSize(1200, 148)
 }
 
 func (r *duplicatesListRowRenderer) Objects() []fyne.CanvasObject {
@@ -356,3 +282,40 @@ func (r *duplicatesListRowRenderer) Refresh() {
 }
 
 func (r *duplicatesListRowRenderer) Destroy() {}
+
+// helper methods
+func newCenteredTruncatedText(text string) *canvas.Text {
+	txt := canvas.NewText(text, color.White)
+	txt.Alignment = fyne.TextAlignCenter
+	return txt
+}
+
+func newLeftAlignedContainer(obj fyne.CanvasObject) *fyne.Container {
+	return container.NewVBox(layout.NewSpacer(), obj, layout.NewSpacer())
+}
+
+func newLeftAlignedCanvasText(text string, clr color.Color) *canvas.Text {
+	txt := canvas.NewText(text, clr)
+	txt.Alignment = fyne.TextAlignLeading
+	return txt
+}
+
+func wrapWithBorder(obj fyne.CanvasObject, borderColor color.Color) *fyne.Container {
+	border := canvas.NewRectangle(borderColor)
+	border.StrokeColor = borderColor
+	border.StrokeWidth = 2
+	return container.NewBorder(border, border, border, border, obj)
+}
+
+func formatFileSize(sizeBytes int64) string {
+	const (
+		MB = 1024.0 * 1024.0
+		GB = 1024.0 * 1024.0 * 1024.0
+	)
+	gbVal := float64(sizeBytes) / GB
+	if gbVal >= 1.0 {
+		return fmt.Sprintf("%.2f GB", gbVal)
+	}
+	mbVal := float64(sizeBytes) / MB
+	return fmt.Sprintf("%.2f MB", mbVal)
+}

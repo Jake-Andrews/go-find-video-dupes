@@ -2,7 +2,6 @@ package application
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,16 +14,14 @@ import (
 
 	"govdupes/internal/config"
 	store "govdupes/internal/db"
-	"govdupes/internal/db/dbstore"
-	"govdupes/internal/db/sqlite"
 	"govdupes/internal/duplicate"
 	"govdupes/internal/filesystem"
 	"govdupes/internal/hash"
 	"govdupes/internal/models"
 	"govdupes/internal/videoprocessor"
 	"govdupes/internal/videoprocessor/ffprobe"
+	"govdupes/internal/vm"
 
-	"fyne.io/fyne/v2/data/binding"
 	"github.com/cespare/xxhash/v2"
 )
 
@@ -38,40 +35,22 @@ func NewApplication(c *config.Config, vs store.VideoStore, vp *videoprocessor.FF
 	return &App{Config: c, VideoStore: vs, VideoProcessor: vp}
 }
 
-func Setup() (*App, *sql.DB) {
-	slog.Info("Starting...")
-
-	var cfg config.Config
-	cfg.SetDefaults()
-
-	logger := config.SetupLogger(cfg.LogFilePath)
-	slog.SetDefault(logger)
-
-	db := sqlite.InitDB(cfg.DatabasePath)
-
-	vs := dbstore.NewVideoStore(db)
-	vp := videoprocessor.NewFFmpegInstance(&cfg)
-
-	return NewApplication(&cfg, vs, vp), db
-}
-
-func (a *App) Search(f *models.FilesearchUI) [][]*models.VideoData {
+func (a *App) Search(vm vm.ViewModel) error {
 	dbVideos, err := a.VideoStore.GetAllVideos(context.Background())
 	if err != nil {
 		slog.Error("Error getting videos from DB", slog.Any("error", err))
 		os.Exit(1)
 	}
 
-	fsVideos := filesystem.SearchDirs(a.Config, func(a int, b int) {
-		err := f.FileCount.Set(fmt.Sprintf("%d files found...", a))
-		if err != nil {
-			slog.Warn("Issue setting fileCount", "fileCount", a)
-		}
-		err = f.AcceptedFiles.Set(fmt.Sprintf("%d files found...", b))
-		if err != nil {
-			slog.Warn("Issue setting AcceptedFiles", "AcceptedFiles", b)
-		}
-	})
+	fsVideos := filesystem.SearchDirs(a.Config,
+		func(a int) {
+			vm.UpdateFileCount(fmt.Sprintf("%d files found...", a))
+		},
+		func(b int) {
+			vm.UpdateAcceptedFiles(fmt.Sprintf("%d files found...", b))
+		},
+	)
+
 	if len(fsVideos) == 0 {
 		slog.Info("No files found in directory. Exiting!")
 		return nil
@@ -87,13 +66,7 @@ func (a *App) Search(f *models.FilesearchUI) [][]*models.VideoData {
 		for i, vid := range videosNotInDB {
 			// UI
 			progress := float64(i) / float64(l)
-			if err := f.GetFileInfoProgress.Set(progress); err != nil {
-				slog.Error("failed to set file info progress",
-					"video", vid,
-					"progress", progress,
-					"error", err,
-				)
-			}
+			vm.UpdateGetFileInfoProgress(progress)
 
 			if err := ffprobe.GetVideoInfo(vid); err != nil {
 				vid.Corrupted = true
@@ -104,7 +77,7 @@ func (a *App) Search(f *models.FilesearchUI) [][]*models.VideoData {
 			}
 			validVideos = append(validVideos, vid)
 		}
-		f.GetFileInfoProgress.Set(1.0)
+		vm.UpdateGetFileInfoProgress(1.0)
 
 		// Build DB lookups for device/inode and size/xxhash
 		deviceInodeToDBVideo := make(map[[2]uint64]*models.Video, len(dbVideos))
@@ -180,14 +153,16 @@ func (a *App) Search(f *models.FilesearchUI) [][]*models.VideoData {
 		}
 
 		slog.Info("Starting to generate pHashes!")
-		generatePHashes(videosToCreate, a.VideoProcessor, a.VideoStore, f.GenPHashesProgress)
+		generatePHashes(videosToCreate, a, func(progress float64) {
+			vm.UpdateGenPHashesProgress(progress)
+		})
 		slog.Info("Done generating pHashes!")
 	}
 
 	fVideos, err := a.VideoStore.GetAllVideos(context.Background())
 	if err != nil {
 		slog.Error("Error retrieving all videos", slog.Any("error", err))
-		return nil
+		return err
 	}
 	for _, vid := range fVideos {
 		slog.Info("Video details", "Path", vid.Path)
@@ -196,7 +171,7 @@ func (a *App) Search(f *models.FilesearchUI) [][]*models.VideoData {
 	fHashes, err := a.VideoStore.GetAllVideoHashes(context.Background())
 	if err != nil {
 		slog.Error("Error retrieving all video hashes", slog.Any("error", err))
-		return nil
+		return err
 	}
 	for _, vhash := range fHashes {
 		slog.Info("Videohash", "vhash.ID", vhash.ID, "vhash.bucket", vhash.Bucket)
@@ -220,15 +195,29 @@ func (a *App) Search(f *models.FilesearchUI) [][]*models.VideoData {
 
 	if err := a.VideoStore.BulkUpdateVideohashes(context.Background(), fHashes); err != nil {
 		slog.Error("Error in BulkUpdateVideohashes", slog.Any("error", err))
+		return err
 	}
 
 	duplicateVideoData, err := a.VideoStore.GetDuplicateVideoData(context.Background())
 	if err != nil {
 		slog.Error("Error getting duplicate video data", slog.Any("error", err))
+		return err
+	}
+
+	slog.Info("Number of duplicate video groups", slog.Int("count", len(duplicateVideoData)))
+
+	if duplicateVideoData == nil {
+		// err no data, etc...
 		return nil
 	}
-	slog.Info("Number of duplicate video groups", slog.Int("count", len(duplicateVideoData)))
-	return duplicateVideoData
+
+	// Convert to a []interface{} to give to the UntypedList
+	items := make([]interface{}, len(duplicateVideoData))
+	for i, grp := range duplicateVideoData {
+		items[i] = grp // []*models.VideoData
+	}
+	vm.SetDuplicateGroups(items)
+	return nil
 }
 
 // reconcileVideosWithDB returns a subset of 'videosFromFS' that are not already
@@ -332,19 +321,19 @@ func findMatchingVideo(
 	return nil, false
 }
 
-func generatePHashes(videosToCreate [][]*models.Video, vp *videoprocessor.FFmpegWrapper, videoStore store.VideoStore, PHasheProgress binding.Float) {
+func generatePHashes(videosToCreate [][]*models.Video, a *App, UpdatePhashProgress func(progress float64)) {
 	videosToCreateLen := len(videosToCreate)
 	for i, group := range videosToCreate {
 		slog.Debug("Processing group", slog.Int("groupSize", len(group)))
 		progress := float64(i) / float64(videosToCreateLen)
-		PHasheProgress.Set(progress)
+		UpdatePhashProgress(progress)
 
 		// If the first in the group already has a hash, reuse it
 		if group[0].FKVideoVideohash != 0 {
 			continue
 		}
 
-		pHash, screenshots, err := hash.Create(vp, group[0])
+		pHash, screenshots, err := hash.Create(a.VideoProcessor, group[0])
 		if err != nil {
 			slog.Warn("Skipping pHash generation",
 				slog.String("path", group[0].Path),
@@ -362,7 +351,7 @@ func generatePHashes(videosToCreate [][]*models.Video, vp *videoprocessor.FFmpeg
 		}
 
 		for _, video := range group {
-			if err := videoStore.CreateVideo(context.Background(), video, pHash, screenshots); err != nil {
+			if err := a.VideoStore.CreateVideo(context.Background(), video, pHash, screenshots); err != nil {
 				slog.Error("FAILED to create video in DB",
 					slog.String("path", video.Path),
 					slog.Any("error", err))
@@ -373,7 +362,7 @@ func generatePHashes(videosToCreate [][]*models.Video, vp *videoprocessor.FFmpeg
 				slog.String("pHash", pHash.HashValue))
 		}
 	}
-	PHasheProgress.Set(1.0)
+	UpdatePhashProgress(1.0)
 }
 
 func generatePHashesParallel(videosToCreate [][]*models.Video, vp *videoprocessor.FFmpegWrapper, videoStore store.VideoStore) {

@@ -31,47 +31,6 @@ type term struct {
 // - Within each orGroup, split into terms
 // - Terms that start with '-' are excluded
 // - Quoted phrases are kept intact
-func parseSearchQuery(input string) searchQuery {
-	input = strings.TrimSpace(input)
-	if input == "" {
-		return searchQuery{} // empty query
-	}
-
-	// Handle the “OR” logic by splitting on `\s+or\s+` or `|`.
-	// Do a quick pass to unify all “|” into the word “ or ” for simplicity.
-	// Then split on " or " (case-insensitive).
-	normalized := strings.ReplaceAll(input, "|", " or ")
-	// Also handle uppercase OR
-	normalized = strings.ReplaceAll(normalized, " OR ", " or ")
-	parts := splitCaseInsensitive(normalized, " or ")
-
-	var orGroups []andGroup
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		// Now parse this part as a series of AND terms.
-		// Respect quoted phrases and tokenize
-		tokens := tokenize(part)
-		if len(tokens) == 0 {
-			continue
-		}
-		var ag andGroup
-		for _, tok := range tokens {
-			t := term{phrase: tok, excluded: false}
-			if strings.HasPrefix(tok, "-") && len(tok) > 1 {
-				// If it starts with -, remove the dash and mark as excluded
-				t.phrase = tok[1:]
-				t.excluded = true
-			}
-			ag.terms = append(ag.terms, t)
-		}
-		orGroups = append(orGroups, ag)
-	}
-
-	return searchQuery{orGroups: orGroups}
-}
 
 // splitCaseInsensitive splits a string on a substring ignoring case.
 func splitCaseInsensitive(s, sep string) []string {
@@ -163,18 +122,18 @@ func appendToken(tokens []string, t string) []string {
 
 // applyFilter iterates over all videos in the 2D slice and keeps only
 // those that match the query. If a group loses all videos, that group is removed.
-func applyFilter(allData [][]*models.VideoData, query searchQuery) [][]*models.VideoData {
+func applyFilter(videoData [][]*models.VideoData, query searchQuery) [][]*models.VideoData {
 	// If query has no orGroups, that means it was empty => no filtering
 	if len(query.orGroups) == 0 {
-		return allData
+		return videoData
 	}
 
 	var filtered [][]*models.VideoData
 
-	for _, group := range allData {
+	for _, group := range videoData {
 		var kept []*models.VideoData
+
 		for _, vd := range group {
-			// We check if this single VideoData matches the query
 			if matchesQuery(vd, query) {
 				kept = append(kept, vd)
 			}

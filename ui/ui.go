@@ -1,4 +1,3 @@
-// ui.go
 package ui
 
 import (
@@ -6,46 +5,44 @@ import (
 	"image/color"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"govdupes/internal/application"
 	"govdupes/internal/models"
+	"govdupes/internal/vm"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
-func CreateUI(application *application.App) {
+func CreateUI(appInstance *application.App, vm vm.ViewModel) {
 	slog.Info("Starting CreateUI")
 
 	// fyne app
 	a := app.New()
 	window := a.NewWindow("govdupes")
 
-	// Copy of the original data so we can re-filter repeatedly hacky
-	videoData := [][]*models.VideoData{}
-	originalVideoData := videoData
-
-	// Video rows
-	duplicatesListWidget := NewDuplicatesList(videoData)
-	if duplicatesListWidget == nil {
-		slog.Error("Failed to create DuplicatesList widget")
+	duplicatesView := NewDuplicatesListView(vm)
+	if duplicatesView == nil {
+		slog.Error("Failed to create DuplicatesListView")
 		os.Exit(1)
 	}
-	duplicatesTab := container.NewVScroll(duplicatesListWidget)
+
+	duplicatesTab := container.NewVScroll(duplicatesView)
 	duplicatesTab.SetMinSize(fyne.NewSize(1200, 768))
 
 	// Tabs
 	themeTab := buildThemeTab(a)
-	sortSelectTab := buildSortSelectDeleteTab(duplicatesListWidget, videoData)
-	filterForm, checkWidget := buildFilter(duplicatesListWidget, originalVideoData)
-	configTab := buildConfigTab(application.Config, checkWidget)
-	searchTab := buildSearchTab(application, duplicatesListWidget, videoData, window)
+	sortSelectTab := buildSortSelectDeleteTab(duplicatesView, vm)
+	filterForm, checkWidget := buildFilter(duplicatesView)
+
+	configTab := buildConfigTab(appInstance.Config, checkWidget)
+	searchTab := buildSearchTab(appInstance, window, vm)
 
 	// Tabs section
 	tabs := container.NewAppTabs(
@@ -92,82 +89,130 @@ func buildThemeTab(a fyne.App) fyne.CanvasObject {
 	)
 }
 
-func buildSearchTab(a *application.App, duplicatesListWidget *DuplicatesList, videoData [][]*models.VideoData, w fyne.Window) *fyne.Container {
-	getFileInfoProgress := binding.NewFloat()
-	getInfoBar := widget.NewProgressBarWithData(getFileInfoProgress)
-	getInfoBar.Bind(getFileInfoProgress)
-
+func buildSearchTab(appInstance *application.App, parent fyne.Window, vm vm.ViewModel) *fyne.Container {
+	getInfoBar := widget.NewProgressBarWithData(vm.GetFileInfoProgressBind())
 	getInfoLabel := widget.NewLabel("GetInfo Progress:")
 	getInfoLabelBar := container.NewGridWithColumns(2, getInfoLabel, getInfoBar)
 
-	genPHashesProgress := binding.NewFloat()
-	genPHashesBar := widget.NewProgressBarWithData(genPHashesProgress)
-	genPHashesBar.Bind(genPHashesProgress)
-
-	genPHashesLabel := widget.NewLabel("Genetate PHashes Progress:")
+	genPHashesBar := widget.NewProgressBarWithData(vm.GetPHashesProgressBind())
+	genPHashesLabel := widget.NewLabel("Generate PHashes Progress:")
 	genPHashesLabelBar := container.NewGridWithColumns(2, genPHashesLabel, genPHashesBar)
 
-	fileCount := binding.NewString()
-	acceptedFiles := binding.NewString()
+	labelFileCount := widget.NewLabelWithData(vm.GetFileCountBind())
+	labelAcceptedFiles := widget.NewLabelWithData(vm.GetAcceptedFilesBind())
 
-	fileSearchUI := models.FilesearchUI{FileCount: fileCount, AcceptedFiles: acceptedFiles, GetFileInfoProgress: getFileInfoProgress, GenPHashesProgress: genPHashesProgress}
+	searchBtn := container.NewCenter(
+		widget.NewButtonWithIcon("Search", theme.Icon(theme.IconNameSearch), func() {
+			slog.Info("Search started!")
 
-	labelFileCount := widget.NewLabelWithData(fileCount)
-	labelAcceptedFiles := widget.NewLabelWithData(acceptedFiles)
+			clockWidget := widget.NewLabel("")
+			d := dialog.NewCustomWithoutButtons(
+				"Searching...",
+				container.NewVBox(clockWidget, labelFileCount, labelAcceptedFiles,
+					getInfoLabelBar, genPHashesLabelBar),
+				parent,
+			)
 
-	searchBtn := container.NewCenter(widget.NewButtonWithIcon("Search", theme.Icon(theme.IconNameSearch), func() {
-		slog.Info("Search started!")
+			c := clock{}
+			c.set()
+			d.Show()
 
-		clockWidget := widget.NewLabel("")
+			stopChan := make(chan struct{})
+			go runClock(&c, clockWidget, stopChan)
 
-		// prop := canvas.NewRectangle(color.Transparent)
-		// prop.SetMinSize(fyne.NewSize(150, 150))
-		d := dialog.NewCustomWithoutButtons("Searching...", container.NewVBox(clockWidget, labelFileCount, labelAcceptedFiles, getInfoLabelBar, genPHashesLabelBar), w)
-
-		c := Clock{}
-		c.set()
-		d.Show()
-
-		stopChan := make(chan struct{})
-		go func() {
-			ticker := time.NewTicker(time.Second)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ticker.C:
-					c.update(clockWidget)
-				case <-stopChan:
-					return
-				}
+			err := appInstance.Search(vm)
+			if err != nil {
+				slog.Error("Error calling search", "error", err)
 			}
-		}()
 
-		if vData := a.Search(&fileSearchUI); vData != nil {
-			videoData = vData
-		} else {
-			videoData = [][]*models.VideoData{}
-		}
-		close(stopChan)
-		duplicatesListWidget.SetData(videoData)
-
-		d.Hide()
-	}))
+			close(stopChan)
+			d.Hide()
+		}),
+	)
 
 	searchTab := container.NewBorder(searchBtn, nil, nil, nil)
-
 	return searchTab
 }
 
-type Clock struct {
+// timer to show elapsed time in a label
+type clock struct {
 	t time.Time
 }
 
-func (c *Clock) set() {
+func (c *clock) set() {
 	c.t = time.Now()
 }
 
-func (c *Clock) update(clock *widget.Label) {
+func (c *clock) update(clockWidget *widget.Label) {
 	tElapsed := time.Since(c.t)
 	tStr := formatDuration(float32(tElapsed.Seconds()))
-	clock.SetText(fmt.Sprintf("Time elapsed: %s", tStr))
+	clockWidget.SetText(fmt.Sprintf("Time elapsed: %s", tStr))
 }
+
+func runClock(c *clock, clockWidget *widget.Label, stopChan chan struct{}) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			c.update(clockWidget)
+		case <-stopChan:
+			return
+		}
+	}
+}
+
+// returns hh:mm:ss from seconds
+func formatDuration(seconds float32) string {
+	hours := int(seconds) / 3600
+	mins := (int(seconds) % 3600) / 60
+	secs := int(seconds) % 60
+	return fmt.Sprintf("%02d:%02d:%02d", hours, mins, secs)
+}
+
+func buildFilter(duplicatesView *DuplicatesListView) (fyne.CanvasObject, *widget.Check) {
+	filterEntry := widget.NewEntry()
+	filterEntry.SetPlaceHolder("Enter path/file search...")
+
+	filterButton := widget.NewButton("Apply", func() {
+		slog.Info("Filter applied", slog.String("filter", filterEntry.Text))
+
+		// parseSearchQuery: a helper that returns a viewmodel.SearchQuery
+		query := parseSearchQuery(filterEntry.Text)
+
+		duplicatesView.ApplyFilter(query)
+	})
+
+	filterForm := container.NewVBox(
+		widget.NewLabel("Filter:"),
+		filterEntry,
+		filterButton,
+	)
+
+	filterForm.Hide()
+	filterVisible := false
+
+	checkWidget := widget.NewCheck("Show Filter Box", func(checked bool) {
+		filterVisible = checked
+		if filterVisible {
+			filterForm.Show()
+		} else {
+			filterForm.Hide()
+		}
+		filterForm.Refresh()
+	})
+
+	return filterForm, checkWidget
+}
+
+// splits the user input into tokens, creating a single AND-group.
+func parseSearchQuery(text string) models.SearchQuery {
+	if text == "" {
+		return models.SearchQuery{}
+	}
+	tokens := strings.Fields(text) // split on spaces
+	return models.SearchQuery{
+		OrGroups: [][]string{tokens},
+	}
+}
+

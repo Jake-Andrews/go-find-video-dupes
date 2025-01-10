@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"govdupes/internal/config"
-	"govdupes/internal/models"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -13,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+// temporary struct for binding config fields to Fyne form widgets.
 type formStruct struct {
 	DatabasePath     string
 	LogFilePath      string
@@ -28,20 +28,25 @@ type formStruct struct {
 	FilesizeCutoff   int64
 }
 
+// creates a UI for reading/writing the config.Config object.
 func buildConfigTab(cfg *config.Config, checkWidget *widget.Check) fyne.CanvasObject {
-	// REST OF CONFIG (binding settings to widgets)
+	// Convert the real config into a formStruct for binding
 	formStruct := ConvertConfigToFormStruct(cfg)
-
-	// intermediate struct
 	formData := binding.BindStruct(&formStruct)
 	form := newFormWithData(formData)
 
+	// append this here because it adopts the form "look", looks out of place
+	// otherwise
 	form.Append("check", checkWidget)
 
 	dirStr := binding.NewString()
 	dirEntry := widget.NewEntryWithData(dirStr)
 
-	startingDirs := binding.BindStringList(&[]string{"./"})
+	startingValues := cfg.StartingDirs
+	if len(startingValues) == 0 {
+		startingValues = []string{"./"}
+	}
+	startingDirs := binding.BindStringList(&startingValues)
 
 	appendBtn := widget.NewButton("Append", func() {
 		startingDirs.Append(dirEntry.Text)
@@ -62,16 +67,17 @@ func buildConfigTab(cfg *config.Config, checkWidget *widget.Check) fyne.CanvasOb
 		}
 	})
 
-	dirList := widget.NewListWithData(startingDirs,
+	dirList := widget.NewListWithData(
+		startingDirs,
 		func() fyne.CanvasObject {
-			return container.NewBorder(nil, nil, nil, nil,
-				widget.NewLabel(""))
+			return container.NewBorder(nil, nil, nil, nil, widget.NewLabel(""))
 		},
 		func(item binding.DataItem, obj fyne.CanvasObject) {
 			f := item.(binding.String)
-			text := obj.(*fyne.Container).Objects[0].(*widget.Label)
-			text.Bind(f)
-		})
+			lbl := obj.(*fyne.Container).Objects[0].(*widget.Label)
+			lbl.Bind(f)
+		},
+	)
 
 	startingDirsLabel := widget.NewLabel("Directories to search:")
 
@@ -79,27 +85,26 @@ func buildConfigTab(cfg *config.Config, checkWidget *widget.Check) fyne.CanvasOb
 	btnsDirEntry := container.NewGridWithRows(3, startingDirsLabel, btns, dirEntry)
 	listPanel := container.NewBorder(btnsDirEntry, nil, nil, nil, dirList)
 
-	// MAIN LAYOUT
+	// places the directory list and the config form side by side
 	content := container.NewGridWithColumns(2, listPanel, form)
 
-	// Hook up form submission to update "real" cfg
+	// copy formStruct fields back into cfg
 	form.OnSubmit = func() {
 		slog.Info("Printing formStruct on Submit", "formStruct", formStruct)
 
 		cfg.DatabasePath = formStruct.DatabasePath
-
+		cfg.LogFilePath = formStruct.LogFilePath
 		cfg.IgnoreStr = splitAndTrim(formStruct.IgnoreStr)
 		cfg.IncludeStr = splitAndTrim(formStruct.IncludeStr)
 		cfg.IgnoreExt = splitAndTrim(formStruct.IgnoreExt)
 		cfg.IncludeExt = splitAndTrim(formStruct.IncludeExt)
-
-		cfg.LogFilePath = formStruct.LogFilePath
 		cfg.SaveSC = formStruct.SavedScreenshots
 		cfg.AbsPath = formStruct.AbsPath
 		cfg.FollowSymbolicLinks = formStruct.FollowSymbolic
 		cfg.SkipSymbolicLinks = formStruct.SkipSymbolic
 		cfg.SilentFFmpeg = formStruct.SilentFFmpeg
 		cfg.FilesizeCutoff = formStruct.FilesizeCutoff
+
 		// read out each directory from the binding
 		length := startingDirs.Length()
 		var dirs []string
@@ -110,6 +115,7 @@ func buildConfigTab(cfg *config.Config, checkWidget *widget.Check) fyne.CanvasOb
 			}
 		}
 		cfg.StartingDirs = dirs
+
 		config.ValidateStartingDirs(cfg)
 
 		slog.Info("Updated real config.Config from UI", "cfg", cfg)
@@ -118,72 +124,44 @@ func buildConfigTab(cfg *config.Config, checkWidget *widget.Check) fyne.CanvasOb
 	return content
 }
 
-func buildFilter(duplicatesListWidget *DuplicatesList, originalVideoData [][]*models.VideoData) (*fyne.Container, *widget.Check) {
-	// FILTER
-	filterEntry := widget.NewEntry()
-	filterEntry.SetPlaceHolder("Enter path/file search...")
-
-	filterButton := widget.NewButton("Apply", func() {
-		slog.Info("Filter applied", slog.String("filter", filterEntry.Text))
-
-		query := parseSearchQuery(filterEntry.Text)
-
-		filteredData := applyFilter(originalVideoData, query)
-
-		duplicatesListWidget.SetData(filteredData)
-	})
-
-	filterForm := container.NewVBox(
-		widget.NewLabel("Filter:"),
-		filterEntry,
-		filterButton,
-	)
-
-	filterForm.Hide()
-	filterVisible := false
-
-	checkWidget := widget.NewCheck("Show Filter Box", func(checked bool) {
-		filterVisible = checked
-		if filterVisible {
-			filterForm.Show()
-		} else {
-			filterForm.Hide()
-		}
-		filterForm.Refresh()
-	})
-	return filterForm, checkWidget
+// copies config fields into a formStruct for binding
+func ConvertConfigToFormStruct(cfg *config.Config) formStruct {
+	return formStruct{
+		DatabasePath:     cfg.DatabasePath,
+		LogFilePath:      cfg.LogFilePath,
+		IgnoreStr:        strings.Join(cfg.IgnoreStr, ","),
+		IncludeStr:       strings.Join(cfg.IncludeStr, ","),
+		IgnoreExt:        strings.Join(cfg.IgnoreExt, ","),
+		IncludeExt:       strings.Join(cfg.IncludeExt, ","),
+		SavedScreenshots: cfg.SaveSC,
+		AbsPath:          cfg.AbsPath,
+		FollowSymbolic:   cfg.FollowSymbolicLinks,
+		SkipSymbolic:     cfg.SkipSymbolicLinks,
+		SilentFFmpeg:     cfg.SilentFFmpeg,
+		FilesizeCutoff:   cfg.FilesizeCutoff,
+	}
 }
 
-// Helper function that splits comma-separated strings into slices
-func splitAndTrim(s string) []string {
-	if s == "" {
-		return []string{}
-	}
-	parts := strings.Split(s, ",")
-	var result []string
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			result = append(result, p)
-		}
-	}
-	return result
-}
+// Both funcs below used together to create forms easily
+// ____________________________________________________
 
+// newFormWithData creates a fyne Form from a binding.DataMap.
 func newFormWithData(data binding.DataMap) *widget.Form {
 	keys := data.Keys()
 	items := make([]*widget.FormItem, len(keys))
 	for i, k := range keys {
-		data, err := data.GetItem(k)
+		sub, err := data.GetItem(k)
 		if err != nil {
 			items[i] = widget.NewFormItem(k, widget.NewLabel(err.Error()))
+			continue
 		}
-		items[i] = widget.NewFormItem(k, createBoundItem(data))
+		items[i] = widget.NewFormItem(k, createBoundItem(sub))
 	}
 
 	return widget.NewForm(items...)
 }
 
+// createBoundItem creates the correct widget for the given DataItem (bool, int, string)
 func createBoundItem(v binding.DataItem) fyne.CanvasObject {
 	switch val := v.(type) {
 	case binding.Bool:
@@ -197,19 +175,18 @@ func createBoundItem(v binding.DataItem) fyne.CanvasObject {
 	}
 }
 
-func ConvertConfigToFormStruct(config *config.Config) formStruct {
-	return formStruct{
-		DatabasePath:     config.DatabasePath,
-		LogFilePath:      config.LogFilePath,
-		IgnoreStr:        strings.Join(config.IgnoreStr, ","),
-		IncludeStr:       strings.Join(config.IncludeStr, ","),
-		IgnoreExt:        strings.Join(config.IgnoreExt, ","),
-		IncludeExt:       strings.Join(config.IncludeExt, ","),
-		SavedScreenshots: config.SaveSC,
-		AbsPath:          config.AbsPath,
-		FollowSymbolic:   config.FollowSymbolicLinks,
-		SkipSymbolic:     config.SkipSymbolicLinks,
-		SilentFFmpeg:     config.SilentFFmpeg,
-		FilesizeCutoff:   config.FilesizeCutoff,
+// splitAndTrim splits a string by commas, then trims each piece.
+func splitAndTrim(s string) []string {
+	if s == "" {
+		return []string{}
 	}
+	parts := strings.Split(s, ",")
+	var result []string
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
 }

@@ -25,6 +25,7 @@ type Config struct {
 	SilentFFmpeg        bool
 }
 
+// "3gp", "3g2", "mpeg", "mpg", "ts", "m2ts", "mts", "vob", "rm", "rmvb", "asf", "ogv", "ogm", "mxf", "divx", "dv", "xvid", "f4v"
 func (c *Config) SetDefaults() {
 	slog.Info("Setting default config options")
 	c.StartingDirs = []string{"."}
@@ -33,7 +34,10 @@ func (c *Config) SetDefaults() {
 	c.IgnoreStr = []string{}
 	c.IncludeStr = []string{}
 	c.IgnoreExt = []string{}
-	c.IncludeExt = []string{"mp4", "m4a", "webm"}
+	c.IncludeExt = []string{
+		"mp4", "m4a", "m4v", "webm", "mkv", "mov", "avi",
+		"wmv", "flv",
+	}
 	c.SaveSC = true
 	c.AbsPath = true
 	c.FollowSymbolicLinks = true
