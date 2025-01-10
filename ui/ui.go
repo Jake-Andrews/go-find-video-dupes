@@ -62,7 +62,7 @@ func CreateUI(appInstance *application.App, vm vm.ViewModel) {
 
 	window.SetContent(mainContent)
 	window.SetMaster()
-	window.Resize(fyne.NewSize(1300, 900))
+	window.Resize(fyne.NewSize(1300, 800))
 	window.ShowAndRun()
 }
 
@@ -215,4 +215,3 @@ func parseSearchQuery(text string) models.SearchQuery {
 		OrGroups: [][]string{tokens},
 	}
 }
-

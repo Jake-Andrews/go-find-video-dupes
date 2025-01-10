@@ -164,7 +164,7 @@ func (r *DuplicatesListRow) CreateRenderer() fyne.WidgetRenderer {
 }
 
 // sets the row’s fields based on the item from the VM.
-func (r *DuplicatesListRow) Update(item models.DuplicateListItemViewModel) {
+func (r *DuplicatesListRow) Update(item *models.DuplicateListItemViewModel) {
 	r.isColumnsHeader = item.IsColumnsHeader
 	r.isGroupHeader = item.IsGroupHeader
 	r.selected = item.Selected
@@ -196,7 +196,7 @@ func (r *DuplicatesListRow) backgroundColor() color.Color {
 	return color.RGBA{0, 0, 0, 0} // transparent
 }
 
-func (r *DuplicatesListRow) updateVideoRow(item models.DuplicateListItemViewModel) {
+func (r *DuplicatesListRow) updateVideoRow(item *models.DuplicateListItemViewModel) {
 	vd := item.VideoData
 	if vd == nil {
 		r.pathText.SetText("(no data)")

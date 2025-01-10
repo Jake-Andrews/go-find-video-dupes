@@ -15,7 +15,7 @@ type ViewModel interface {
 	ApplyFilter(query models.SearchQuery)
 
 	// Get the flattenedritems for the UI to display
-	GetItems() []models.DuplicateListItemViewModel
+	GetItems() []*models.DuplicateListItemViewModel
 
 	// Sorting
 	SortVideoData(sortKey string, ascending bool)

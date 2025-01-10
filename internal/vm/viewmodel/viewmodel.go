@@ -21,7 +21,7 @@ import (
 // duplicates list logic (filtering, selection, flattening).
 // bindings that update various UI elements FileCount, etc.).
 type viewModel struct {
-	items           []models.DuplicateListItemViewModel
+	items           []*models.DuplicateListItemViewModel
 	DuplicateGroups binding.UntypedList
 	mutex           sync.RWMutex
 
@@ -34,9 +34,10 @@ type viewModel struct {
 }
 
 func NewViewModel(app *application.App) vm.ViewModel {
+	slog.Info("newviewmodel")
 	return &viewModel{
 		DuplicateGroups:     binding.NewUntypedList(),
-		items:               make([]models.DuplicateListItemViewModel, 0),
+		items:               make([]*models.DuplicateListItemViewModel, 0),
 		FileCount:           binding.NewString(),
 		AcceptedFiles:       binding.NewString(),
 		GetFileInfoProgress: binding.NewFloat(),
@@ -69,7 +70,6 @@ func (vm *viewModel) SetData(videoData [][]*models.VideoData) {
 
 	vm.items = vm.items[:0]
 
-	// Check if we have at least one non-empty group
 	hasAnyVideos := false
 	for _, group := range videoData {
 		if len(group) > 1 {
@@ -78,7 +78,6 @@ func (vm *viewModel) SetData(videoData [][]*models.VideoData) {
 		}
 	}
 
-	// Filter out groups that have 0 or 1 videos
 	var filteredGroups [][]*models.VideoData
 	for _, group := range videoData {
 		if len(group) > 1 {
@@ -86,18 +85,13 @@ func (vm *viewModel) SetData(videoData [][]*models.VideoData) {
 		}
 	}
 
-	// Add columns header row if we have any
 	if hasAnyVideos {
-		vm.items = append(vm.items, models.DuplicateListItemViewModel{
+		vm.items = append(vm.items, &models.DuplicateListItemViewModel{
 			IsColumnsHeader: true,
 		})
 	}
 
-	// For each group, add group header + one row per video
 	for i, group := range filteredGroups {
-		// maps to calculate group row headers size
-		// two hardlinks to the same inode/dev don't take up 2x the
-		// size...
 		uniqueInodeDeviceID := make(map[string]bool)
 		uniquePaths := make(map[string]bool)
 		var totalSize int64
@@ -124,14 +118,14 @@ func (vm *viewModel) SetData(videoData [][]*models.VideoData) {
 			i+1, len(group), formatFileSize(totalSize),
 		)
 
-		vm.items = append(vm.items, models.DuplicateListItemViewModel{
+		vm.items = append(vm.items, &models.DuplicateListItemViewModel{
 			IsGroupHeader: true,
 			GroupIndex:    i,
 			HeaderText:    groupHeaderText,
 		})
 
 		for _, vd := range group {
-			vm.items = append(vm.items, models.DuplicateListItemViewModel{
+			vm.items = append(vm.items, &models.DuplicateListItemViewModel{
 				GroupIndex: i,
 				VideoData:  vd,
 			})
@@ -140,10 +134,10 @@ func (vm *viewModel) SetData(videoData [][]*models.VideoData) {
 }
 
 // GetItems safely returns a copy of vm.items for the View to read.
-func (vm *viewModel) GetItems() []models.DuplicateListItemViewModel {
+func (vm *viewModel) GetItems() []*models.DuplicateListItemViewModel {
 	vm.mutex.RLock()
 	defer vm.mutex.RUnlock()
-	itemsCopy := make([]models.DuplicateListItemViewModel, len(vm.items))
+	itemsCopy := make([]*models.DuplicateListItemViewModel, len(vm.items))
 	copy(itemsCopy, vm.items)
 	return itemsCopy
 }
@@ -155,7 +149,7 @@ func (vm *viewModel) UpdateSelection(itemIndex int, selected bool) {
 	if itemIndex < 0 || itemIndex >= len(vm.items) {
 		return
 	}
-	item := &vm.items[itemIndex]
+	item := vm.items[itemIndex]
 	if item.IsColumnsHeader || item.IsGroupHeader {
 		return
 	}
@@ -166,8 +160,8 @@ func (vm *viewModel) UpdateSelection(itemIndex int, selected bool) {
 func (vm *viewModel) ClearSelection() {
 	vm.mutex.Lock()
 	defer vm.mutex.Unlock()
-	for i := range vm.items {
-		vm.items[i].Selected = false
+	for _, item := range vm.items {
+		item.Selected = false
 	}
 }
 
@@ -219,7 +213,7 @@ func (vm *viewModel) ApplyFilter(query models.SearchQuery) {
 	}
 }
 
-func rowMatchesQuery(it models.DuplicateListItemViewModel, query models.SearchQuery) bool {
+func rowMatchesQuery(it *models.DuplicateListItemViewModel, query models.SearchQuery) bool {
 	if it.VideoData == nil {
 		return false
 	}
@@ -247,7 +241,10 @@ func andGroupSatisfied(checkStr string, andGroup []string) bool {
 // ___________________
 
 func (vm *viewModel) SortVideoData(sortKey string, ascending bool) {
+	// changing videoDataGroups changes DuplicateGroups since
+	// vm.InterfaceToVideoData doesn't make a deep copy
 	videoDataGroups := vm.InterfaceToVideoData()
+	defer vm.SetViewModelDuplicateGroups(videoDataGroups)
 
 	for _, group := range videoDataGroups {
 		sort.SliceStable(group, func(i, j int) bool {
@@ -433,7 +430,7 @@ func (vm *viewModel) SelectIdentical() {
 
 	groupedItems := make(map[int][]*models.DuplicateListItemViewModel)
 	for i := range vm.items {
-		item := &vm.items[i]
+		item := vm.items[i]
 		if item.IsColumnsHeader || item.IsGroupHeader || item.VideoData == nil {
 			continue
 		}
@@ -496,7 +493,7 @@ func (vm *viewModel) SelectAllButLargest() {
 		}
 	}
 	for i := range vm.items {
-		item := &vm.items[i]
+		item := vm.items[i]
 		if item.VideoData != nil && !item.IsGroupHeader && !item.IsColumnsHeader {
 			if item.VideoData.Video.Size < groupMaxSize[item.GroupIndex] {
 				item.Selected = true
@@ -528,7 +525,7 @@ func (vm *viewModel) SelectAllButSmallest() {
 		}
 	}
 	for i := range vm.items {
-		item := &vm.items[i]
+		item := vm.items[i]
 		if item.VideoData != nil && !item.IsGroupHeader && !item.IsColumnsHeader {
 			if item.VideoData.Video.Size > groupMinSize[item.GroupIndex] {
 				item.Selected = true
@@ -553,7 +550,7 @@ func (vm *viewModel) SelectAllButNewest() {
 		}
 	}
 	for i := range vm.items {
-		item := &vm.items[i]
+		item := vm.items[i]
 		if item.VideoData == nil || item.IsGroupHeader || item.IsColumnsHeader {
 			continue
 		}
@@ -586,7 +583,7 @@ func (vm *viewModel) SelectAllButOldest() {
 		}
 	}
 	for i := range vm.items {
-		item := &vm.items[i]
+		item := vm.items[i]
 		if item.VideoData != nil && !item.IsGroupHeader && !item.IsColumnsHeader {
 			if item.VideoData.Video.ModifiedAt.After(groupMinModified[item.GroupIndex]) {
 				item.Selected = true
@@ -611,7 +608,7 @@ func (vm *viewModel) SelectAllButHighestBitrate() {
 		}
 	}
 	for i := range vm.items {
-		item := &vm.items[i]
+		item := vm.items[i]
 		if item.VideoData != nil && !item.IsGroupHeader && !item.IsColumnsHeader {
 			if item.VideoData.Video.BitRate < groupMaxBitrate[item.GroupIndex] {
 				item.Selected = true
@@ -696,4 +693,19 @@ func formatFileSize(sizeBytes int64) string {
 
 func (vm *viewModel) SetDuplicateGroups(groups []interface{}) error {
 	return vm.DuplicateGroups.Set(groups)
+}
+
+func (vm *viewModel) SetViewModelDuplicateGroups(v [][]*models.VideoData) {
+	// Convert to a []interface{} to set the UntypedList
+	items := make([]interface{}, len(v))
+	for i, grp := range v {
+		items[i] = grp // []*models.VideoData
+	}
+	err := vm.SetDuplicateGroups(items)
+	if err != nil {
+		slog.Error("Setting vm.SetDuplicateGroups", "Error", err)
+	}
+	// ensure DuplicateGroups gets updated (sorting won't cause an update)
+	vm.DuplicateGroups.Append(struct{}{})
+	vm.DuplicateGroups.Remove(struct{}{})
 }

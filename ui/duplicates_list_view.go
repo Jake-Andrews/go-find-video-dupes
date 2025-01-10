@@ -54,6 +54,7 @@ func NewDuplicatesListView(vm vm.ViewModel) *DuplicatesListView {
 		groups := vm.InterfaceToVideoData()
 		vm.SetData(groups)
 		dl.Refresh()
+		slog.Info("vm.AddDuplicateGroupsListener")
 	}))
 
 	return dl
@@ -117,7 +118,7 @@ func (dl *DuplicatesListView) Refresh() {
 
 // Helpers for mapping “visible index” to the actual item in VM.
 
-func visibleIndexToItemIndex(items []models.DuplicateListItemViewModel, visibleIndex int) int {
+func visibleIndexToItemIndex(items []*models.DuplicateListItemViewModel, visibleIndex int) int {
 	count := 0
 	for i, it := range items {
 		if !it.Hidden {
@@ -130,7 +131,7 @@ func visibleIndexToItemIndex(items []models.DuplicateListItemViewModel, visibleI
 	return -1
 }
 
-func visibleCount(items []models.DuplicateListItemViewModel) int {
+func visibleCount(items []*models.DuplicateListItemViewModel) int {
 	count := 0
 	for _, it := range items {
 		if !it.Hidden {
