@@ -104,8 +104,8 @@ func (dl *DuplicatesListView) updateListRow(itemID widget.ListItemID, co fyne.Ca
 		return
 	}
 
-	rowMin := row.MinSize()
-	totalRowHeight := fyne.Max(148, rowMin.Height)
+	rowMin := row.pathText.MinSize().Height
+	totalRowHeight := fyne.Max(148, rowMin)
 	dl.list.SetItemHeight(itemID, totalRowHeight)
 }
 

@@ -95,9 +95,13 @@ func (vm *viewModel) SetData(videoData [][]*models.VideoData) {
 
 	// For each group, add group header + one row per video
 	for i, group := range filteredGroups {
+		// maps to calculate group row headers size
+		// two hardlinks to the same inode/dev don't take up 2x the
+		// size...
 		uniqueInodeDeviceID := make(map[string]bool)
 		uniquePaths := make(map[string]bool)
 		var totalSize int64
+
 		for _, vd := range group {
 			uniquePaths[vd.Video.Path] = true
 			if vd.Video.IsSymbolicLink {
@@ -107,6 +111,7 @@ func (vm *viewModel) SetData(videoData [][]*models.VideoData) {
 				totalSize += vd.Video.Size
 				continue
 			}
+
 			identifier := fmt.Sprintf("%d:%d", vd.Video.Inode, vd.Video.Device)
 			if !uniqueInodeDeviceID[identifier] {
 				uniqueInodeDeviceID[identifier] = true
