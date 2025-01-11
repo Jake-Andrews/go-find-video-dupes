@@ -34,14 +34,14 @@ func CreateUI(appInstance *application.App, vm vm.ViewModel) {
 	}
 
 	duplicatesTab := container.NewVScroll(duplicatesView)
-	duplicatesTab.SetMinSize(fyne.NewSize(1200, 768))
+	duplicatesTab.SetMinSize(fyne.NewSize(1000, 768))
 
 	// Tabs
 	themeTab := buildThemeTab(a)
 	sortSelectTab := buildSortSelectDeleteTab(duplicatesView, vm)
 	filterForm, checkWidget := buildFilter(duplicatesView)
 
-	configTab := buildConfigTab(appInstance.Config, checkWidget)
+	configTab := buildConfigTab(appInstance.Config, checkWidget, vm)
 	searchTab := buildSearchTab(appInstance, window, vm)
 
 	// Tabs section

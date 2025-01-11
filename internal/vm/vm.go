@@ -29,6 +29,7 @@ type ViewModel interface {
 	DeleteSelectedFromListDB()
 	DeleteSelectedFromListDBDisk()
 	HardlinkVideos() error
+	ExportToJSON(path string) error
 
 	// Selection methods
 	SelectIdentical()

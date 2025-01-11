@@ -1,6 +1,7 @@
 package viewmodel
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -824,4 +825,29 @@ func (vm *viewModel) SetViewModelDuplicateGroups(v [][]*models.VideoData) {
 	// ensure DuplicateGroups gets updated (sorting won't cause an update)
 	vm.DuplicateGroups.Append(struct{}{})
 	vm.DuplicateGroups.Remove(struct{}{})
+}
+
+func (vm *viewModel) ExportToJSON(path string) error {
+	vm.mutex.RLock()
+	defer vm.mutex.RUnlock()
+
+	duplicateGroups := vm.InterfaceToVideoData()
+	if duplicateGroups == nil {
+		return fmt.Errorf("no duplicate video data to export")
+	}
+
+	jsonBytes, err := json.MarshalIndent(duplicateGroups, "", "  ")
+	if err != nil {
+		slog.Error("Failed to marshal duplicate video data to JSON", "error", err)
+		return err
+	}
+
+	err = os.WriteFile(path, jsonBytes, 0o644)
+	if err != nil {
+		slog.Error("Failed to write JSON file", "path", path, "error", err)
+		return err
+	}
+
+	slog.Info("Exported duplicates to JSON", "path", path)
+	return nil
 }

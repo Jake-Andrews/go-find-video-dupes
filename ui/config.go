@@ -2,9 +2,11 @@ package ui
 
 import (
 	"log/slog"
+	"os"
 	"strings"
 
 	"govdupes/internal/config"
+	"govdupes/internal/vm"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -29,14 +31,12 @@ type formStruct struct {
 }
 
 // creates a UI for reading/writing the config.Config object.
-func buildConfigTab(cfg *config.Config, checkWidget *widget.Check) fyne.CanvasObject {
-	// Convert the real config into a formStruct for binding
+func buildConfigTab(cfg *config.Config, checkWidget *widget.Check, myViewModel vm.ViewModel) fyne.CanvasObject {
 	formStruct := ConvertConfigToFormStruct(cfg)
 	formData := binding.BindStruct(&formStruct)
 	form := newFormWithData(formData)
 
 	// append this here because it adopts the form "look", looks out of place
-	// otherwise
 	form.Append("check", checkWidget)
 
 	dirStr := binding.NewString()
@@ -79,10 +79,38 @@ func buildConfigTab(cfg *config.Config, checkWidget *widget.Check) fyne.CanvasOb
 		},
 	)
 
-	startingDirsLabel := widget.NewLabel("Directories to search:")
+	// JSON label + entry + button
+	jsonLabel := widget.NewLabel("Export to json")
+	jsonPathEntry := widget.NewEntry()
+	cwd, _ := os.Getwd()
+	cwd += "/duplicateVideosJSON.json"
+	jsonPathEntry.PlaceHolder = cwd
+	jsonPathEntry.Text = cwd
 
-	btns := container.NewGridWithColumns(2, appendBtn, deleteBtn)
-	btnsDirEntry := container.NewGridWithRows(3, startingDirsLabel, btns, dirEntry)
+	jsonButton := widget.NewButton("Export", func() {
+		exportPath := jsonPathEntry.Text
+		if exportPath == "" {
+			slog.Info("JSON export path is empty, defaulting to cwd", "cwd", cwd)
+			exportPath = cwd
+		}
+		slog.Info("Exporting duplicates to JSON", "exportPath", exportPath)
+
+		err := myViewModel.ExportToJSON(exportPath)
+		if err != nil {
+			slog.Error("Failed to export duplicates to JSON", "error", err)
+		}
+	})
+
+	startingDirsLabel := widget.NewLabel("Directories to search:")
+	btnsDirEntry := container.NewGridWithRows(
+		7,
+		jsonLabel,
+		jsonPathEntry,
+		jsonButton,
+		startingDirsLabel,
+		container.NewGridWithColumns(2, appendBtn, deleteBtn),
+		dirEntry,
+	)
 	listPanel := container.NewBorder(btnsDirEntry, nil, nil, nil, dirList)
 
 	// places the directory list and the config form side by side
