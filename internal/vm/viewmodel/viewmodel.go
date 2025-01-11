@@ -283,6 +283,7 @@ func (vm *viewModel) SortVideoData(sortKey string, ascending bool) {
 
 func (vm *viewModel) SortVideosByGroupSize(ascending bool) {
 	videoDataGroups := vm.InterfaceToVideoData()
+	defer vm.SetViewModelDuplicateGroups(videoDataGroups)
 
 	sort.Slice(videoDataGroups, func(i, j int) bool {
 		calculateTotalSize := func(group []*models.VideoData) int64 {
@@ -336,7 +337,6 @@ func (vm *viewModel) SortVideosByTotalVideos(ascending bool) {
 
 func (vm *viewModel) DeleteSelectedFromList() {
 	vm.mutex.Lock()
-	defer vm.mutex.Unlock()
 
 	selectedIDs := make(map[int64]struct{})
 	for _, item := range vm.items {
@@ -356,15 +356,121 @@ func (vm *viewModel) DeleteSelectedFromList() {
 		groups[gi] = filtered
 	}
 
-	// Write back
-	newList := make([]interface{}, 0, len(groups))
-	for _, g := range groups {
-		newList = append(newList, g)
-	}
-	_ = vm.DuplicateGroups.Set(newList)
+	vm.SetViewModelDuplicateGroups(groups)
 
-	// Re-run flatten
+	// re-run flatten
 	vm.items = vm.items[:0]
+	vm.mutex.Unlock()
+	vm.SetData(groups)
+}
+
+func (vm *viewModel) DeleteSelectedFromListDB() {
+	vm.mutex.Lock()
+
+	// collect all selected IDs
+	selectedIDs := make([]int64, 0)
+	for _, item := range vm.items {
+		if item.Selected && item.VideoData != nil {
+			selectedIDs = append(selectedIDs, item.VideoData.Video.ID)
+		}
+	}
+	if len(selectedIDs) == 0 {
+		slog.Info("No videos selected for DB deletion")
+		return
+	}
+
+	if err := vm.Application.DeleteVideosByID(selectedIDs); err != nil {
+		slog.Error("Failed to delete videos from DB", "error", err)
+	} else {
+		slog.Info("Successfully deleted selected videos from DB")
+	}
+
+	// remove them from the in-memory list
+	groups := vm.InterfaceToVideoData()
+	for gi := range groups {
+		var filtered []*models.VideoData
+		for _, vd := range groups[gi] {
+			shouldRemove := false
+			for _, id := range selectedIDs {
+				if vd.Video.ID == id {
+					shouldRemove = true
+					break
+				}
+			}
+			if !shouldRemove {
+				filtered = append(filtered, vd)
+			}
+		}
+		groups[gi] = filtered
+	}
+
+	vm.SetViewModelDuplicateGroups(groups)
+
+	vm.items = vm.items[:0]
+	vm.mutex.Unlock()
+	vm.SetData(groups)
+}
+
+func (vm *viewModel) DeleteSelectedFromListDBDisk() {
+	vm.mutex.Lock()
+
+	selectedIDs := make([]int64, 0)
+	// store a mapping of ID -> file path to remove from disk
+	idToPath := make(map[int64]string)
+
+	for _, item := range vm.items {
+		if item.Selected && item.VideoData != nil {
+			vid := item.VideoData.Video
+			selectedIDs = append(selectedIDs, vid.ID)
+			idToPath[vid.ID] = vid.Path
+		}
+	}
+	if len(selectedIDs) == 0 {
+		slog.Info("No videos selected for DB+Disk deletion")
+		return
+	}
+
+	// delete each file from disk
+	for _, videoID := range selectedIDs {
+		path := idToPath[videoID]
+		slog.Info("Deleting file from disk", "path", path)
+		err := os.Remove(path)
+		if err != nil {
+			slog.Error("Failed to remove file from disk", "path", path, "error", err)
+			return
+		}
+	}
+
+	// delete from DB
+	if err := vm.Application.DeleteVideosByID(selectedIDs); err != nil {
+		slog.Error("Failed to delete videos from DB", "error", err)
+	} else {
+		slog.Info("Successfully deleted selected videos from DB")
+	}
+
+	// remove videos from the in-memory list
+	groups := vm.InterfaceToVideoData()
+	for gi := range groups {
+		var filtered []*models.VideoData
+		for _, vd := range groups[gi] {
+			shouldRemove := false
+			for _, id := range selectedIDs {
+				if vd.Video.ID == id {
+					shouldRemove = true
+					break
+				}
+			}
+			if !shouldRemove {
+				filtered = append(filtered, vd)
+			}
+		}
+		groups[gi] = filtered
+	}
+
+	vm.SetViewModelDuplicateGroups(groups)
+
+	vm.items = vm.items[:0]
+	vm.mutex.Unlock()
 	vm.SetData(groups)
 }
 
@@ -412,10 +518,20 @@ func (vm *viewModel) HardlinkVideos() error {
 			}
 			if err := os.Rename(tmpFilePath, target); err != nil {
 				slog.Error("Failed to rename hardlinked file", "error", err)
-				_ = os.Remove(tmpFilePath)
-				continue
+				err = os.Remove(tmpFilePath)
+				if err != nil {
+					slog.Error("Failed to delete tmp", "tmpfilepath", tmpFilePath, "error", err)
+					continue
+				}
+				slog.Info("Successfully deleted tmpfile", "tmpfilepath", tmpFilePath)
 			}
 			slog.Info("Hardlink success ->", slog.String("from", source), slog.String("to", target))
+			err := os.Remove(tmpFilePath)
+			if err != nil {
+				slog.Error("Failed to delete tmpfile", "tmpfilepath", tmpFilePath, "error", err)
+				continue
+			}
+			slog.Info("Successfully deleted tmpfile", "tmpfilepath", tmpFilePath)
 		}
 		slog.Info("Finished processing group", slog.Int("idx", groupIdx))
 	}

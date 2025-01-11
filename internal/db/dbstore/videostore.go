@@ -592,3 +592,8 @@ func buildInsertQueryAndValues(v interface{}) ([]string, []string, []interface{}
 	}
 	return columns, placeholders, values, nil
 }
+
+func (r *videoRepo) DeleteVideoByID(ctx context.Context, videoID int64) error {
+	_, err := r.db.ExecContext(ctx, "DELETE FROM video WHERE id = ?", videoID)
+	return err
+}

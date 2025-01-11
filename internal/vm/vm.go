@@ -26,6 +26,8 @@ type ViewModel interface {
 	UpdateSelection(itemIndex int, selected bool)
 	ClearSelection()
 	DeleteSelectedFromList()
+	DeleteSelectedFromListDB()
+	DeleteSelectedFromListDBDisk()
 	HardlinkVideos() error
 
 	// Selection methods

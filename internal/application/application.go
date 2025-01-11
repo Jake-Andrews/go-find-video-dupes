@@ -458,3 +458,13 @@ func computeXXHashes(videos []*models.Video) []*models.Video {
 	}
 	return validVideos
 }
+
+func (a *App) DeleteVideosByID(ids []int64) error {
+	for _, id := range ids {
+		// your store delete call
+		if err := a.VideoStore.DeleteVideoByID(context.Background(), id); err != nil {
+			return err
+		}
+	}
+	return nil
+}

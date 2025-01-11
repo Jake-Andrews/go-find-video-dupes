@@ -16,4 +16,5 @@ type VideoStore interface {
 	GetScreenshotsForValidHashes(ctx context.Context) (map[int64]models.Screenshots, error)
 	GetDuplicateVideoData(ctx context.Context) ([][]*models.VideoData, error)
 	GetVideosByVideohashIDs(ctx context.Context, hashIDs []int64) (map[int64][]*models.Video, error)
+	DeleteVideoByID(ctx context.Context, videoID int64) error
 }

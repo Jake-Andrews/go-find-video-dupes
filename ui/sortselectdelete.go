@@ -11,11 +11,27 @@ import (
 )
 
 func buildSortSelectDeleteTab(duplicatesView *DuplicatesListView, vm vm.ViewModel) fyne.CanvasObject {
-	deleteLabel := widget.NewLabel("Delete selected from list:")
-	deleteButton := widget.NewButton("Delete from list", func() {
-		duplicatesView.vm.DeleteSelectedFromList()
-		duplicatesView.Refresh()
-		slog.Info("Deleted from list")
+	// Delete
+	deleteOptions := []string{
+		"Delete from list",
+		"Delete from list & DB",
+		"Delete from disk/list/DB",
+	}
+	deleteLabel := widget.NewLabel("Delete")
+	deleteDropdown := widget.NewSelect(deleteOptions, nil)
+	deleteDropdown.PlaceHolder = "Select an option"
+	deleteButton := widget.NewButton("Delete", func() {
+		if deleteDropdown.Selected == "" {
+			return
+		}
+		switch deleteDropdown.Selected {
+		case "Delete selected from list":
+			duplicatesView.vm.DeleteSelectedFromList()
+		case "Delete from list & DB":
+			duplicatesView.vm.DeleteSelectedFromListDB()
+		case "Delete from disk/list/DB":
+			duplicatesView.vm.DeleteSelectedFromListDBDisk()
+		}
 	})
 
 	// Hardlink
@@ -100,12 +116,12 @@ func buildSortSelectDeleteTab(duplicatesView *DuplicatesListView, vm vm.ViewMode
 			vm.SortVideosByTotalVideos(ascending)
 		}
 		sortOrder[sKey] = !sortOrder[sKey] // flip sorting
-		duplicatesView.Refresh()
+		// duplicatesView.Refresh()
 	})
 
 	content := container.NewVBox(
 		sortLabel, dropdown, sortButton,
-		deleteLabel, deleteButton,
+		deleteLabel, deleteDropdown, deleteButton,
 		hardlinkLabel, hardlinkButton,
 		selectLabel, selectDropdown, selectButton,
 	)
