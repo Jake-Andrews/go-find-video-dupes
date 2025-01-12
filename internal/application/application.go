@@ -48,7 +48,7 @@ func (a *App) Search(vm vm.ViewModel) error {
 			vm.UpdateFileCount(fmt.Sprintf("%d files found...", a))
 		},
 		func(b int) {
-			vm.UpdateAcceptedFiles(fmt.Sprintf("%d files found...", b))
+			vm.UpdateAcceptedFiles(fmt.Sprintf("%d videos accepted...", b))
 		},
 	)
 
@@ -62,48 +62,7 @@ func (a *App) Search(vm vm.ViewModel) error {
 
 	if len(videosNotInDB) != 0 {
 
-		validVideos := make([]*models.Video, 0, len(videosNotInDB))
-		inodeDeviceMap := make(map[string]*models.Video) // Map to store inode-device info
-
-		l := len(videosNotInDB)
-		for i, vid := range videosNotInDB {
-			// UI progress update
-			progress := float64(i) / float64(l)
-			vm.UpdateGetFileInfoProgress(progress)
-
-			// unique key for inode and device
-			inodeDeviceKey := fmt.Sprintf("%d:%d", vid.Inode, vid.Device)
-
-			// already processed inode/dev
-			if existingVid, exists := inodeDeviceMap[inodeDeviceKey]; exists {
-				// Reuse info
-				vid.Size = existingVid.Size
-				vid.Duration = existingVid.Duration
-				vid.BitRate = existingVid.BitRate
-				vid.VideoCodec = existingVid.VideoCodec
-				vid.AudioCodec = existingVid.AudioCodec
-				vid.Width = existingVid.Width
-				vid.Height = existingVid.Height
-				vid.SampleRateAvg = existingVid.SampleRateAvg
-				vid.AvgFrameRate = existingVid.AvgFrameRate
-				slog.Info("Reused video info", slog.String("path", vid.Path))
-			} else {
-				if err := ffprobe.GetVideoInfo(vid); err != nil {
-					vid.Corrupted = true
-					slog.Warn("Skipping corrupted file",
-						slog.String("path", vid.Path),
-						slog.Any("error", err))
-					continue
-				}
-
-				inodeDeviceMap[inodeDeviceKey] = vid
-			}
-
-			validVideos = append(validVideos, vid)
-		}
-
-		vm.UpdateGetFileInfoProgress(1.0)
-
+		validVideos := GetFFprobeInfo(videosNotInDB, vm)
 		// Build DB lookups for device/inode and size/xxhash
 		deviceInodeToDBVideo := make(map[[2]uint64]*models.Video, len(dbVideos))
 		sizeHashToDBVideo := make(map[[2]string]*models.Video, len(dbVideos))
@@ -561,4 +520,93 @@ func (a *App) DeleteVideosByID(ids []int64) error {
 		}
 	}
 	return nil
+}
+
+func GetFFprobeInfo(videosNotInDB []*models.Video, vm vm.ViewModel) []*models.Video {
+	workerCount := 10
+	validVideos := make([]*models.Video, 0, len(videosNotInDB))
+	inodeDeviceMap := make(map[string]*models.Video)
+	inodeDeviceMutex := sync.Mutex{}
+
+	l := len(videosNotInDB)
+	progressChan := make(chan float64, l)
+	resultChan := make(chan *models.Video, l)
+	taskChan := make(chan *models.Video, l)
+	var wg sync.WaitGroup
+
+	// progress updater to UI
+	go func() {
+		totalProgress := 0.0
+		for progress := range progressChan {
+			totalProgress += progress
+			vm.UpdateGetFileInfoProgress(totalProgress)
+		}
+	}()
+
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for vid := range taskChan {
+				// unique key for inode and device
+				inodeDeviceKey := fmt.Sprintf("%d:%d", vid.Inode, vid.Device)
+
+				// check inode/dev combination has already been processed
+				inodeDeviceMutex.Lock()
+				existingVid, exists := inodeDeviceMap[inodeDeviceKey]
+				inodeDeviceMutex.Unlock()
+
+				if exists {
+					// reuse info for vids with matching inode/dev
+					vid.Size = existingVid.Size
+					vid.Duration = existingVid.Duration
+					vid.BitRate = existingVid.BitRate
+					vid.VideoCodec = existingVid.VideoCodec
+					vid.AudioCodec = existingVid.AudioCodec
+					vid.Width = existingVid.Width
+					vid.Height = existingVid.Height
+					vid.SampleRateAvg = existingVid.SampleRateAvg
+					vid.AvgFrameRate = existingVid.AvgFrameRate
+					slog.Info("Reused video info", slog.String("path", vid.Path))
+				} else {
+					if err := ffprobe.GetVideoInfo(vid); err != nil {
+						vid.Corrupted = true
+						slog.Warn("Skipping corrupted file",
+							slog.String("path", vid.Path),
+							slog.Any("error", err))
+						progressChan <- 1.0 / float64(l) // increment progress for skipped file
+						continue
+					}
+
+					// store processed inode/device info
+					inodeDeviceMutex.Lock()
+					inodeDeviceMap[inodeDeviceKey] = vid
+					inodeDeviceMutex.Unlock()
+				}
+
+				// send valid video
+				resultChan <- vid
+				progressChan <- 1.0 / float64(l)
+			}
+		}()
+	}
+
+	// distribute tasks to workers
+	go func() {
+		for _, vid := range videosNotInDB {
+			taskChan <- vid
+		}
+		close(taskChan)
+	}()
+
+	wg.Wait()
+	close(resultChan)
+	close(progressChan)
+
+	for vid := range resultChan {
+		validVideos = append(validVideos, vid)
+	}
+
+	vm.UpdateGetFileInfoProgress(1.0)
+	return validVideos
 }
