@@ -43,11 +43,13 @@ func CreateUI(appInstance *application.App, vm vm.ViewModel) {
 
 	configTab := buildConfigTab(appInstance.Config, checkWidget, vm)
 	searchTab := buildSearchTab(appInstance, window, vm)
+	statisticsTab := buildStatisticsTab(vm)
 
 	// Tabs section
 	tabs := container.NewAppTabs(
 		container.NewTabItem("Search", searchTab),
 		container.NewTabItem("Duplicates", duplicatesTab),
+		container.NewTabItem("Statistics", statisticsTab),
 		container.NewTabItem("Theme", themeTab),
 		container.NewTabItem("Sort/Select/Delete", sortSelectTab),
 		container.NewTabItem("Settings", configTab),
@@ -214,4 +216,15 @@ func parseSearchQuery(text string) models.SearchQuery {
 	return models.SearchQuery{
 		OrGroups: [][]string{tokens},
 	}
+}
+
+func buildStatisticsTab(vm vm.ViewModel) *fyne.Container {
+	totalGroupSizeLabel := widget.NewLabelWithData(vm.GetTotalGroupSizeBind())
+	spaceSavingsLabel := widget.NewLabelWithData(vm.GetPotentialSpaceSavingsBind())
+	statsContainer := container.NewVBox(
+		container.NewGridWithColumns(2, widget.NewLabel("Total Video Size (excluding videos with matching inode/dev):"), totalGroupSizeLabel),
+		container.NewGridWithColumns(2, widget.NewLabel("Potential Space Savings (keeping only the largest file):"), spaceSavingsLabel),
+	)
+
+	return statsContainer
 }

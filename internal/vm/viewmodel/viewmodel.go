@@ -1,12 +1,14 @@
 package viewmodel
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -26,10 +28,12 @@ type viewModel struct {
 	DuplicateGroups binding.UntypedList
 	mutex           sync.RWMutex
 
-	FileCount           binding.String
-	AcceptedFiles       binding.String
-	GetFileInfoProgress binding.Float
-	GenPHashesProgress  binding.Float
+	FileCount             binding.String
+	AcceptedFiles         binding.String
+	GetFileInfoProgress   binding.Float
+	GenPHashesProgress    binding.Float
+	TotalGroupSize        binding.String
+	PotentialSpaceSavings binding.String
 
 	Application *application.App
 }
@@ -37,13 +41,15 @@ type viewModel struct {
 func NewViewModel(app *application.App) vm.ViewModel {
 	slog.Info("newviewmodel")
 	return &viewModel{
-		DuplicateGroups:     binding.NewUntypedList(),
-		items:               make([]*models.DuplicateListItemViewModel, 0),
-		FileCount:           binding.NewString(),
-		AcceptedFiles:       binding.NewString(),
-		GetFileInfoProgress: binding.NewFloat(),
-		GenPHashesProgress:  binding.NewFloat(),
-		Application:         app,
+		DuplicateGroups:       binding.NewUntypedList(),
+		items:                 make([]*models.DuplicateListItemViewModel, 0),
+		FileCount:             binding.NewString(),
+		AcceptedFiles:         binding.NewString(),
+		GetFileInfoProgress:   binding.NewFloat(),
+		GenPHashesProgress:    binding.NewFloat(),
+		TotalGroupSize:        binding.NewString(),
+		PotentialSpaceSavings: binding.NewString(),
+		Application:           app,
 	}
 }
 
@@ -132,6 +138,7 @@ func (vm *viewModel) SetData(videoData [][]*models.VideoData) {
 			})
 		}
 	}
+	vm.UpdateStatistics(filteredGroups)
 }
 
 // GetItems safely returns a copy of vm.items for the View to read.
@@ -477,7 +484,6 @@ func (vm *viewModel) DeleteSelectedFromListDBDisk() {
 
 func (vm *viewModel) HardlinkVideos() error {
 	vm.mutex.Lock()
-	defer vm.mutex.Unlock()
 
 	groups := vm.InterfaceToVideoData()
 	if groups == nil {
@@ -502,9 +508,22 @@ func (vm *viewModel) HardlinkVideos() error {
 		}
 
 		source := selectedVideos[0].Path
+		sourceInode := selectedVideos[0].Inode
+		sourceDev := selectedVideos[0].Device
 		baseDir := filepath.Dir(source)
 
+		hardLinked := []*models.Video{selectedVideos[0]}
+		nonHardlinked := []*models.Video{}
+		failedRemovingHardlink := 0
 		for i := 1; i < len(selectedVideos); i++ {
+			// if videos are already hardlinked, add to slice to later
+			// update the # of hardlinks if one occurs
+			if selectedVideos[i].Device == sourceDev && selectedVideos[i].Inode == sourceInode {
+				hardLinked = append(hardLinked, selectedVideos[i])
+				slog.Info("Skipping hardlinking file, files are already hardlinked", "Path", selectedVideos[i].Path)
+				continue
+			}
+
 			target := selectedVideos[i].Path
 			tmpFilePath := fmt.Sprintf("%s/govdupes_%d.tmp", baseDir, time.Now().UnixNano())
 
@@ -512,6 +531,7 @@ func (vm *viewModel) HardlinkVideos() error {
 				slog.String("source", source),
 				slog.String("temp", tmpFilePath),
 			)
+			// atomic
 
 			if err := os.Link(source, tmpFilePath); err != nil {
 				slog.Error("Failed to create hardlink", "error", err)
@@ -519,23 +539,46 @@ func (vm *viewModel) HardlinkVideos() error {
 			}
 			if err := os.Rename(tmpFilePath, target); err != nil {
 				slog.Error("Failed to rename hardlinked file", "error", err)
+
 				err = os.Remove(tmpFilePath)
 				if err != nil {
 					slog.Error("Failed to delete tmp", "tmpfilepath", tmpFilePath, "error", err)
+					failedRemovingHardlink++
 					continue
 				}
 				slog.Info("Successfully deleted tmpfile", "tmpfilepath", tmpFilePath)
-			}
-			slog.Info("Hardlink success ->", slog.String("from", source), slog.String("to", target))
-			err := os.Remove(tmpFilePath)
-			if err != nil {
-				slog.Error("Failed to delete tmpfile", "tmpfilepath", tmpFilePath, "error", err)
 				continue
 			}
-			slog.Info("Successfully deleted tmpfile", "tmpfilepath", tmpFilePath)
+			slog.Info("Hardlink success ->", slog.String("from", source), slog.String("to", target))
+			nonHardlinked = append(nonHardlinked, selectedVideos[i])
 		}
+
+		// update NumHardLinks
 		slog.Info("Finished processing group", slog.Int("idx", groupIdx))
+		for _, v := range hardLinked {
+			additionalHardlinks := uint64(len(nonHardlinked)) + uint64(failedRemovingHardlink)
+			v.NumHardLinks += additionalHardlinks
+		}
+
+		// update video info for hardlinked videos
+		for _, v := range nonHardlinked {
+			updateVideoFields(v, selectedVideos[0], []string{"ID", "Path", "FileName"})
+		}
+
+		// Update videos in the database
+		allVideos := append(hardLinked, nonHardlinked...)
+		if err := vm.Application.VideoStore.UpdateVideos(context.Background(), allVideos); err != nil {
+			slog.Error("Failed to update videos in database", "error", err)
+			return fmt.Errorf("update videos in database: %w", err)
+		}
+
 	}
+
+	vm.SetViewModelDuplicateGroups(groups)
+
+	vm.items = vm.items[:0]
+	vm.mutex.Unlock()
+	vm.SetData(groups)
 
 	return nil
 }
@@ -791,6 +834,14 @@ func (vm *viewModel) GetPHashesProgressBind() binding.Float {
 	return vm.GenPHashesProgress
 }
 
+func (vm *viewModel) GetTotalGroupSizeBind() binding.String {
+	return vm.TotalGroupSize
+}
+
+func (vm *viewModel) GetPotentialSpaceSavingsBind() binding.String {
+	return vm.PotentialSpaceSavings
+}
+
 func (vm *viewModel) AddDuplicateGroupsListener(listener binding.DataListener) {
 	vm.DuplicateGroups.AddListener(listener)
 }
@@ -813,6 +864,7 @@ func (vm *viewModel) SetDuplicateGroups(groups []interface{}) error {
 }
 
 func (vm *viewModel) SetViewModelDuplicateGroups(v [][]*models.VideoData) {
+	vm.UpdateStatistics(v)
 	// Convert to a []interface{} to set the UntypedList
 	items := make([]interface{}, len(v))
 	for i, grp := range v {
@@ -850,4 +902,59 @@ func (vm *viewModel) ExportToJSON(path string) error {
 
 	slog.Info("Exported duplicates to JSON", "path", path)
 	return nil
+}
+
+// CopyStructFields copies fields from src to dst, skipping specified fields.
+func updateVideoFields(dst, src *models.Video, skipFields []string) {
+	dstVal := reflect.ValueOf(dst).Elem()
+	srcVal := reflect.ValueOf(src).Elem()
+	skipMap := make(map[string]struct{}, len(skipFields))
+	for _, field := range skipFields {
+		skipMap[field] = struct{}{}
+	}
+
+	for i := 0; i < dstVal.NumField(); i++ {
+		fieldName := dstVal.Type().Field(i).Name
+		if _, skip := skipMap[fieldName]; skip {
+			continue
+		}
+		dstVal.Field(i).Set(srcVal.Field(i))
+	}
+}
+
+func (vm *viewModel) UpdateStatistics(groups [][]*models.VideoData) {
+	totalGroupSize := int64(0)
+	potentialSavings := int64(0)
+
+	for _, group := range groups {
+		uniqueVideos := make(map[string]*models.Video)
+		groupSize := int64(0)
+
+		// calculate group size and avoid double-counting hardlinked files
+		largestFileSize := int64(-2)
+		for _, vd := range group {
+			identifier := fmt.Sprintf("%d:%d", vd.Video.Inode, vd.Video.Device)
+			if _, exists := uniqueVideos[identifier]; !exists {
+				uniqueVideos[identifier] = &vd.Video
+				groupSize += vd.Video.Size
+			}
+			if vd.Video.Size > largestFileSize {
+				largestFileSize = vd.Video.Size
+			}
+		}
+
+		// subtract the largest video size from duplicatesSize
+		// (assumes user wil keep the largest size, not perfect but...)
+		// size, inode, dev #a 1, 1, 2 #b 1,1,2 #c 2,3,4
+		// group size: 3, if you save #c, saved size = 1 unit
+		potentialSavings += groupSize - largestFileSize
+		totalGroupSize += groupSize
+	}
+
+	if err := vm.TotalGroupSize.Set(formatFileSize(totalGroupSize)); err != nil {
+		slog.Error("Failed to update TotalGroupSize", "error", err)
+	}
+	if err := vm.PotentialSpaceSavings.Set(formatFileSize(potentialSavings)); err != nil {
+		slog.Error("Failed to update PotentialSpaceSavings", "error", err)
+	}
 }

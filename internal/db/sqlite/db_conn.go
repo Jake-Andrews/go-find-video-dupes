@@ -48,7 +48,6 @@ func InitDB(dbPath string) *sql.DB {
 			device INTEGER,
 			sampleRateAvg INTEGER,
 			avgFrameRate REAL,
-			-- NEW column to reference the videohash
 			FK_video_videohash INTEGER,
 			FOREIGN KEY (FK_video_videohash) REFERENCES videohash (id) ON DELETE CASCADE
 		);
@@ -64,7 +63,6 @@ func InitDB(dbPath string) *sql.DB {
 			duration INTEGER NOT NULL,
 			neighbours TEXT,
 			bucket INTEGER
-			-- No foreign key to "video" here
 		);
 	`)
 	if err != nil {

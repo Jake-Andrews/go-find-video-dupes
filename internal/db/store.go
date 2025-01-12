@@ -8,6 +8,8 @@ import (
 
 type VideoStore interface {
 	CreateVideo(ctx context.Context, video *models.Video, hash *models.Videohash, sc *models.Screenshots) error
+	UpdateVideos(ctx context.Context, videos []*models.Video) error
+	BatchCreateVideos(ctx context.Context, videos []*models.VideoData) error
 	GetVideo(ctx context.Context, videoPath string) (*models.Video, *models.Videohash, error)
 	GetAllVideoHashes(ctx context.Context) ([]*models.Videohash, error)
 	GetAllVideos(ctx context.Context) ([]*models.Video, error)

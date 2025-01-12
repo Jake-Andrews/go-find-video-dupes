@@ -58,6 +58,7 @@ func (f *FractionFloat32) UnmarshalJSON(data []byte) error {
 
 func GetVideoInfo(v *models.Video) error {
 	slog.Info("Getting video info", slog.String("filename", v.FileName))
+	// ffmpeg_go.Probe()
 	cmd := exec.Command("ffprobe",
 		"-v", "error",
 		"-show_entries", "format=duration,size,bit_rate",

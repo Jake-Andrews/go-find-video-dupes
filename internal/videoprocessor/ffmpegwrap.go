@@ -33,7 +33,7 @@ func (f *FFmpegWrapper) ScreenshotAtTime(filePath string, scWriter io.Writer, ti
 	*/
 
 	err := ffmpeg.
-		Input(filePath, ffmpeg.KwArgs{"ss": timeStamp, "hide_banner": "", "nostats": ""}).
+		Input(filePath, ffmpeg.KwArgs{"ss": timeStamp, "hide_banner": "", "nostats": "", "nostdin": ""}).
 		Output("pipe:",
 			ffmpeg.KwArgs{
 				"vcodec":  "bmp",

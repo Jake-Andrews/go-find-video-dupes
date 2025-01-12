@@ -55,4 +55,7 @@ type ViewModel interface {
 	GetFileCountBind() binding.String
 	GetAcceptedFilesBind() binding.String
 	AddDuplicateGroupsListener(listener binding.DataListener)
+	UpdateStatistics(group [][]*models.VideoData)
+	GetPotentialSpaceSavingsBind() binding.String
+	GetTotalGroupSizeBind() binding.String
 }

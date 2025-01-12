@@ -321,6 +321,110 @@ func (r *videoRepo) CreateVideo(ctx context.Context, video *models.Video, hash *
 	return nil
 }
 
+func (r *videoRepo) BatchCreateVideos(ctx context.Context, videos []*models.VideoData) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+
+	defer func() {
+		if p := recover(); p != nil {
+			_ = tx.Rollback()
+			panic(p)
+		} else if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	/*
+		videoInsertQuery := `
+			INSERT INTO video (
+				path, fileName, createdAt, modifiedAt, videoCodec, audioCodec,
+				width, height, duration, size, bitRate, numHardLinks,
+				symbolicLink, isSymbolicLink, isHardLink, inode, device,
+				sampleRateAvg, avgFrameRate, FK_video_videohash
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+		`
+	*/
+
+	videohashInsertQuery := `
+		INSERT INTO videohash (hashValue, hashType, duration, neighbours, bucket)
+		VALUES (?, ?, ?, ?, ?);
+	`
+
+	screenshotInsertQuery := `
+		INSERT INTO screenshot (FK_screenshot_videohash, screenshots)
+		VALUES (?, ?);
+	`
+
+	for _, videoData := range videos {
+		video := videoData.Video
+		videohash := videoData.Videohash
+		screenshots := videoData.Screenshot
+
+		// Insert the videohash record
+		neighboursJSON, err := json.Marshal(videohash.Neighbours)
+		if err != nil {
+			return fmt.Errorf("marshal neighbours: %w", err)
+		}
+
+		hashResult, err := tx.ExecContext(ctx, videohashInsertQuery,
+			videohash.HashValue, videohash.HashType, videohash.Duration,
+			string(neighboursJSON), videohash.Bucket,
+		)
+		if err != nil {
+			return fmt.Errorf("insert videohash: %w", err)
+		}
+		existingHashID, err := hashResult.LastInsertId()
+		if err != nil {
+			return fmt.Errorf("retrieve hash ID: %w", err)
+		}
+
+		// Attach hash ID to video
+		video.FKVideoVideohash = existingHashID
+
+		// Insert the video referencing the existing/new videohash
+		cols, placeholders, vals, err := buildInsertQueryAndValues(video)
+		if err != nil {
+			return fmt.Errorf("build insert data for video: %w", err)
+		}
+		insertVideoQuery := fmt.Sprintf(
+			"INSERT INTO video (%s) VALUES (%s);",
+			strings.Join(cols, ", "),
+			strings.Join(placeholders, ", "),
+		)
+		result, err := tx.ExecContext(ctx, insertVideoQuery, vals...)
+		if err != nil {
+			return fmt.Errorf("insert video: %w", err)
+		}
+		videoID, err := result.LastInsertId()
+		if err != nil {
+			return fmt.Errorf("retrieve video ID: %w", err)
+		}
+		video.ID = videoID
+		// Insert screenshots
+		base64Images, err := screenshots.EncodeImages()
+		if err != nil {
+			return fmt.Errorf("encode images: %w", err)
+		}
+		jsonImages, err := json.Marshal(base64Images)
+		if err != nil {
+			return fmt.Errorf("marshal images: %w", err)
+		}
+		_, err = tx.ExecContext(ctx, screenshotInsertQuery,
+			existingHashID, string(jsonImages),
+		)
+		if err != nil {
+			return fmt.Errorf("insert screenshots: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
+	}
+	return nil
+}
+
 // GetVideo fetches a single video by file path along with its videohash.
 // Because the video references the hash via FK_video_videohash, we look up the hash by that ID.
 func (r *videoRepo) GetVideo(ctx context.Context, videoPath string) (*models.Video, *models.Videohash, error) {
@@ -596,4 +700,96 @@ func buildInsertQueryAndValues(v interface{}) ([]string, []string, []interface{}
 func (r *videoRepo) DeleteVideoByID(ctx context.Context, videoID int64) error {
 	_, err := r.db.ExecContext(ctx, "DELETE FROM video WHERE id = ?", videoID)
 	return err
+}
+
+func (r *videoRepo) UpdateVideos(ctx context.Context, videos []*models.Video) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+
+	defer func() {
+		if p := recover(); p != nil {
+			_ = tx.Rollback()
+			panic(p)
+		} else if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	for _, video := range videos {
+		cols, _, vals, err := buildInsertQueryAndValues(video)
+		if err != nil {
+			return fmt.Errorf("build update data for video ID %d: %w", video.ID, err)
+		}
+
+		updateQuery := fmt.Sprintf(
+			"UPDATE video SET %s WHERE id = ?;",
+			strings.Join(func() []string {
+				updates := make([]string, len(cols))
+				for i, col := range cols {
+					updates[i] = fmt.Sprintf("%s = ?", col)
+				}
+				return updates
+			}(), ", "),
+		)
+
+		vals = append(vals, video.ID)
+
+		_, err = tx.ExecContext(ctx, updateQuery, vals...)
+		if err != nil {
+			return fmt.Errorf("update video ID %d: %w", video.ID, err)
+		}
+	}
+
+	// Check for orphaned videohashes
+	hashQuery := `
+		SELECT id
+		FROM videohash
+		WHERE id NOT IN (
+			SELECT DISTINCT FK_video_videohash FROM video
+		);
+	`
+
+	hashIDs := []int64{}
+	rows, err := tx.QueryContext(ctx, hashQuery)
+	if err != nil {
+		return fmt.Errorf("query orphaned videohashes: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var hashID int64
+		if err := rows.Scan(&hashID); err != nil {
+			return fmt.Errorf("scan orphaned hash ID: %w", err)
+		}
+		hashIDs = append(hashIDs, hashID)
+	}
+
+	if rows.Err() != nil {
+		return fmt.Errorf("iterate orphaned hash rows: %w", rows.Err())
+	}
+
+	for _, hashID := range hashIDs {
+		_, err = tx.ExecContext(ctx, `
+			DELETE FROM screenshot
+			WHERE FK_screenshot_videohash = ?;
+		`, hashID)
+		if err != nil {
+			return fmt.Errorf("delete screenshots for orphaned hash ID %d: %w", hashID, err)
+		}
+
+		_, err = tx.ExecContext(ctx, `
+			DELETE FROM videohash
+			WHERE id = ?;
+		`, hashID)
+		if err != nil {
+			return fmt.Errorf("delete orphaned videohash ID %d: %w", hashID, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
+	}
+	return nil
 }
