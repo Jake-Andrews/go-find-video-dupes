@@ -27,8 +27,6 @@ go.work.sum
 *.txt
 *.webm
 *.mp4
-*.png
-*.md
 *.json
 videos.db
 app.log
