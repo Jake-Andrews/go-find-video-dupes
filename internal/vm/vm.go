@@ -41,7 +41,7 @@ type ViewModel interface {
 	SelectAll()
 
 	// UntypedList
-	SetDuplicateGroups(groups []interface{}) error
+	SetDuplicateGroups(groups []any) error
 
 	// Progress / Count fields
 	UpdateFileCount(count string)

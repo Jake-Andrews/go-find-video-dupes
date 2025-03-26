@@ -67,7 +67,7 @@ func tokenize(s string) []string {
 	var current strings.Builder
 	inQuotes := false
 
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		ch := s[i]
 
 		if ch == '"' {

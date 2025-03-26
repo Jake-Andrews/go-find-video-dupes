@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -393,23 +394,18 @@ func (vm *viewModel) DeleteSelectedFromListDB() {
 		slog.Info("Successfully deleted selected videos from DB")
 	}
 
-	// remove them from the in-memory list
+	// remove selected ids from in-memory list
 	groups := vm.InterfaceToVideoData()
 	for gi := range groups {
-		var filtered []*models.VideoData
+		var videosToKeep []*models.VideoData
 		for _, vd := range groups[gi] {
-			shouldRemove := false
-			for _, id := range selectedIDs {
-				if vd.Video.ID == id {
-					shouldRemove = true
-					break
-				}
-			}
-			if !shouldRemove {
-				filtered = append(filtered, vd)
+
+			selected := slices.Contains(selectedIDs, vd.Video.ID)
+			if !selected {
+				videosToKeep = append(videosToKeep, vd)
 			}
 		}
-		groups[gi] = filtered
+		groups[gi] = videosToKeep
 	}
 
 	vm.SetViewModelDuplicateGroups(groups)
@@ -459,20 +455,15 @@ func (vm *viewModel) DeleteSelectedFromListDBDisk() {
 	// remove videos from the in-memory list
 	groups := vm.InterfaceToVideoData()
 	for gi := range groups {
-		var filtered []*models.VideoData
+		var videosToKeep []*models.VideoData
 		for _, vd := range groups[gi] {
-			shouldRemove := false
-			for _, id := range selectedIDs {
-				if vd.Video.ID == id {
-					shouldRemove = true
-					break
-				}
-			}
-			if !shouldRemove {
-				filtered = append(filtered, vd)
+
+			selected := slices.Contains(selectedIDs, vd.Video.ID)
+			if !selected {
+				videosToKeep = append(videosToKeep, vd)
 			}
 		}
-		groups[gi] = filtered
+		groups[gi] = videosToKeep
 	}
 
 	vm.SetViewModelDuplicateGroups(groups)
@@ -859,14 +850,14 @@ func formatFileSize(sizeBytes int64) string {
 	return fmt.Sprintf("%.2f MB", mbVal)
 }
 
-func (vm *viewModel) SetDuplicateGroups(groups []interface{}) error {
+func (vm *viewModel) SetDuplicateGroups(groups []any) error {
 	return vm.DuplicateGroups.Set(groups)
 }
 
 func (vm *viewModel) SetViewModelDuplicateGroups(v [][]*models.VideoData) {
 	vm.UpdateStatistics(v)
 	// Convert to a []interface{} to set the UntypedList
-	items := make([]interface{}, len(v))
+	items := make([]any, len(v))
 	for i, grp := range v {
 		items[i] = grp // []*models.VideoData
 	}
@@ -913,7 +904,7 @@ func updateVideoFields(dst, src *models.Video, skipFields []string) {
 		skipMap[field] = struct{}{}
 	}
 
-	for i := 0; i < dstVal.NumField(); i++ {
+	for i := range dstVal.NumField() {
 		fieldName := dstVal.Type().Field(i).Name
 		if _, skip := skipMap[fieldName]; skip {
 			continue

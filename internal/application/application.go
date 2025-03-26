@@ -196,7 +196,7 @@ func (a *App) Search(vm vm.ViewModel) error {
 	}
 
 	// Convert to a []interface{} to give to the UntypedList
-	items := make([]interface{}, len(duplicateVideoData))
+	items := make([]any, len(duplicateVideoData))
 	for i, grp := range duplicateVideoData {
 		items[i] = grp // []*models.VideoData
 	}
@@ -374,7 +374,7 @@ func generatePHashesParallel(videosToCreate [][]*models.Video, a *App, UpdatePha
 				return
 			}
 
-			for retries := 0; retries < maxRetries; retries++ {
+			for retries := range maxRetries {
 				if err := a.VideoStore.BatchCreateVideos(context.Background(), batch); err != nil {
 					if isSQLiteBusyError(err) {
 						time.Sleep(retryBaseDelay * time.Duration(1<<retries))
@@ -409,7 +409,7 @@ func generatePHashesParallel(videosToCreate [][]*models.Video, a *App, UpdatePha
 	}()
 
 	// Worker goroutines
-	for i := 0; i < workerCount; i++ {
+	for range workerCount {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -479,7 +479,7 @@ func computeXXHashes(videos []*models.Video) []*models.Video {
 
 	const workerCount = 16
 
-	for i := 0; i < workerCount; i++ {
+	for range workerCount {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -543,7 +543,7 @@ func GetFFprobeInfo(videosNotInDB []*models.Video, vm vm.ViewModel) []*models.Vi
 		}
 	}()
 
-	for i := 0; i < workerCount; i++ {
+	for range workerCount {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

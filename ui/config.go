@@ -136,7 +136,7 @@ func buildConfigTab(cfg *config.Config, checkWidget *widget.Check, myViewModel v
 		// read out each directory from the binding
 		length := startingDirs.Length()
 		var dirs []string
-		for i := 0; i < length; i++ {
+		for i := range length {
 			v, err := startingDirs.GetValue(i)
 			if err == nil {
 				dirs = append(dirs, v)

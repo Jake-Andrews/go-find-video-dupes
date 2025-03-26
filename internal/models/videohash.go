@@ -28,7 +28,7 @@ type Videohash struct {
 type IntSlice []int
 
 // used to scan videohash (specifically HashType) into db
-func (is *IntSlice) Scan(value interface{}) error {
+func (is *IntSlice) Scan(value any) error {
 	if value == nil {
 		*is = nil
 		return nil

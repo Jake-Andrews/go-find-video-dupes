@@ -53,7 +53,7 @@ func createTimeStamps(duration float32, numTimestamps int) []string {
 	interval := (outro - intro) / float32(numTimestamps)
 
 	var timestamps []string
-	for i := 0; i < numTimestamps; i++ {
+	for i := range numTimestamps {
 		t := durationToFFmpegTimestamp(intro + float32(i)*interval)
 		timestamps = append(timestamps, t)
 	}

@@ -139,7 +139,7 @@ func calcHammingDistance(hashVal1 string, hashVal2 string) (int, error) {
 	}
 
 	distance := 0
-	for i := 0; i < len(hashVal1); i++ {
+	for i := range len(hashVal1) {
 		if hashVal1[i] != hashVal2[i] {
 			distance++
 		}

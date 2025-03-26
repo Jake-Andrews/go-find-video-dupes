@@ -109,7 +109,7 @@ func (r *videoRepo) GetVideosByVideohashIDs(ctx context.Context, hashIDs []int64
 
 	// placeholders for the IN clause
 	placeholders := make([]string, len(hashIDs))
-	args := make([]interface{}, len(hashIDs))
+	args := make([]any, len(hashIDs))
 	for i, id := range hashIDs {
 		placeholders[i] = "?"
 		args[i] = id
@@ -651,8 +651,8 @@ func (r *videoRepo) getScreenshotsByVideohashIDs(ctx context.Context, videohashI
 }
 
 // helps to build the query args for a variable list of IDs
-func int64ToInterfaceSlice(ids []int64) []interface{} {
-	result := make([]interface{}, len(ids))
+func int64ToInterfaceSlice(ids []int64) []any {
+	result := make([]any, len(ids))
 	for i, id := range ids {
 		result[i] = id
 	}
@@ -661,7 +661,7 @@ func int64ToInterfaceSlice(ids []int64) []interface{} {
 
 // buildInsertQueryAndValues generates an INSERT statement's column, placeholders, and values
 // from a struct 'v' that has `db:"columnName"` tags. It skips empty db tags and the "id" field.
-func buildInsertQueryAndValues(v interface{}) ([]string, []string, []interface{}, error) {
+func buildInsertQueryAndValues(v any) ([]string, []string, []any, error) {
 	rv := reflect.ValueOf(v)
 	if rv.Kind() == reflect.Pointer {
 		rv = rv.Elem()
@@ -673,11 +673,11 @@ func buildInsertQueryAndValues(v interface{}) ([]string, []string, []interface{}
 	var (
 		columns      []string
 		placeholders []string
-		values       []interface{}
+		values       []any
 	)
 
 	rt := rv.Type()
-	for i := 0; i < rv.NumField(); i++ {
+	for i := range rv.NumField() {
 		fieldType := rt.Field(i)
 		dbTag := fieldType.Tag.Get("db")
 
