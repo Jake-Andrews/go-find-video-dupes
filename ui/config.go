@@ -11,6 +11,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -32,7 +33,8 @@ type formStruct struct {
 }
 
 // creates a UI for reading/writing the config.Config object.
-func buildConfigTab(cfg *config.Config, checkWidget *widget.Check, myViewModel vm.ViewModel) fyne.CanvasObject {
+// also allows the user to select & create the HashType and SearchMethod
+func buildConfigTab(cfg *config.Config, w fyne.Window, checkWidget *widget.Check, myViewModel vm.ViewModel) fyne.CanvasObject {
 	formStruct := ConvertConfigToFormStruct(cfg)
 	formData := binding.BindStruct(&formStruct)
 	form := newFormWithData(formData)
@@ -40,6 +42,7 @@ func buildConfigTab(cfg *config.Config, checkWidget *widget.Check, myViewModel v
 	// append this here because it adopts the form "look", looks out of place
 	form.Append("check", checkWidget)
 
+	// directories to search
 	dirStr := binding.NewString()
 	dirEntry := widget.NewEntryWithData(dirStr)
 
@@ -146,7 +149,11 @@ func buildConfigTab(cfg *config.Config, checkWidget *widget.Check, myViewModel v
 		}
 		cfg.StartingDirs = dirs
 
-		config.ValidateStartingDirs(cfg)
+		err := config.ValidateStartingDirs(cfg)
+		if err != nil {
+			dialog.ShowError(err, w)
+			return
+		}
 
 		slog.Info("Updated real config.Config from UI", "cfg", cfg)
 	}

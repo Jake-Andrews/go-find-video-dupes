@@ -80,17 +80,18 @@ func createSlowPhash(vp *videoprocessor.FFmpegWrapper, v *models.Video) (*models
 	var builder strings.Builder
 	for i, img := range images {
 		/*
-			outputPath := fmt.Sprintf("test%d.bmp", i)
-			file, err := os.Create(outputPath)
-			if err != nil {
-				return nil, nil, fmt.Errorf("error creating file for image %d: %w", i, err)
-			}
-			defer file.Close()
+			            // troubleshoot saving images to fs
+						outputPath := fmt.Sprintf("test%d.bmp", i)
+						file, err := os.Create(outputPath)
+						if err != nil {
+							return nil, nil, fmt.Errorf("error creating file for image %d: %w", i, err)
+						}
+						defer file.Close()
 
-			// pHash (it handles grayscale etc...)
-			if err := bmp.Encode(file, img); err != nil {
-				return nil, nil, fmt.Errorf("error writing BMP for image %d: %w", i, err)
-			}
+						// pHash (it handles grayscale etc...)
+						if err := bmp.Encode(file, img); err != nil {
+							return nil, nil, fmt.Errorf("error writing BMP for image %d: %w", i, err)
+						}
 		*/
 
 		hash, hashErr := goimagehash.PerceptionHash(img)
@@ -123,96 +124,6 @@ func createSlowPhash(vp *videoprocessor.FFmpegWrapper, v *models.Video) (*models
 	}
 
 	return pHash, screenshots, nil
-}
-
-/*
-func createSlowPhash(vp *videoprocessor.FFmpegWrapper, v *models.Video) (*models.Videohash, *models.Screenshots, error) {
-	numFrames := int(math.Floor(float64(v.Duration)))
-
-	// build a list of timestamps [0s, 1s, 2s, ...] up to numFrames
-	timeStamps := make([]string, 0, numFrames)
-	for i := range numFrames {
-		// convert `i` seconds to "HH:MM:SS.mmm"
-		timeStr := durationToFFmpegTimestamp(float32(i))
-		timeStamps = append(timeStamps, timeStr)
-	}
-
-	if len(timeStamps) == 0 {
-		return nil, nil, fmt.Errorf("no timestamps generated for slowPhash")
-	}
-
-	// returns at least one screenshot or errors
-	var buf bytes.Buffer
-	bmpBytes, err := vp.ScreenshotsAtTimestamps(v.Path, &buf, timeStamps)
-	if err != nil {
-		slog.Error("SlowPhash: error retrieving frames", slog.Any("error", err))
-		return nil, nil, err
-	}
-
-	var thumbIndex int
-	if len(bmpBytes) < 5 {
-		thumbIndex = 0
-	} else {
-		thumbIndex = 5
-	}
-	slog.Info("thumbIndex", "value:", thumbIndex)
-
-	var screenshot *models.Screenshots
-	var builder strings.Builder
-	for i, bmpData := range bmpBytes {
-		img, decErr := bmpDecodeBytes(bmpData)
-		if decErr != nil {
-			slog.Warn("SlowPhash: skipping broken frame", slog.Int("frameIndex", i), slog.Any("error", decErr))
-			continue
-		}
-		// store the decoded frame so we can display in UI
-		if i == thumbIndex {
-			screenshot = &models.Screenshots{Screenshots: []image.Image{img}}
-		}
-		os.WriteFile(fmt.Sprintf("test%d.bmp", i), bmpData, os.ModePerm)
-
-		// compute pHash (it handles grayscale etc...)
-		hash, hashErr := goimagehash.PerceptionHash(img)
-		if hashErr != nil {
-			slog.Warn("SlowPhash: skipping frame can't compute pHash", slog.Int("frameIndex", i), slog.Any("error", hashErr))
-			continue
-		}
-
-		// skip "p: "
-		builder.WriteString(hash.ToString()[2:])
-	}
-
-	combinedHash := builder.String()
-
-	if len(combinedHash) == 0 {
-		return nil, nil, fmt.Errorf("SlowPhash: no valid pHashes generated")
-	}
-
-		slog.Info("SlowPhash: computed multiple pHashes",
-			slog.String("file", v.FileName),
-			slog.Int("framesUsed", len(bmpBytes)),
-			slog.String("combinedHash", combinedHash),
-		)
-
-	pHash := &models.Videohash{
-		ID:        v.ID,
-		HashType:  "pHash",
-		HashValue: combinedHash,
-		Duration:  v.Duration,
-		Bucket:    -1,
-	}
-
-	return pHash, screenshot, nil
-}
-*/
-
-func bmpDecodeBytes(bmpData []byte) (image.Image, error) {
-	buf := bytes.NewReader(bmpData)
-	img, err := bmp.Decode(buf)
-	if err != nil {
-		return nil, fmt.Errorf("bmp decode failed: %w", err)
-	}
-	return img, nil
 }
 
 func createTimeStamps(duration float32, numTimestamps int) []string {
@@ -301,7 +212,7 @@ func createCollage(images []image.Image) (image.Image, error) {
 func createPhash(v *models.Video, h string) *models.Videohash {
 	pHash := models.Videohash{
 		ID:        v.ID,
-		HashType:  "pHash",
+		HashType:  "pHash", //**change to num that refers to a row in the hashtype table in the DB**
 		HashValue: h,
 		Duration:  v.Duration,
 		Bucket:    -1,
@@ -324,3 +235,94 @@ func ConvertImagesToBase64(images []image.Image) ([]string, error) {
 	}
 	return encodedStrings, nil
 }
+
+/*
+func createSlowPhash(vp *videoprocessor.FFmpegWrapper, v *models.Video) (*models.Videohash, *models.Screenshots, error) {
+	numFrames := int(math.Floor(float64(v.Duration)))
+
+	// build a list of timestamps [0s, 1s, 2s, ...] up to numFrames
+	timeStamps := make([]string, 0, numFrames)
+	for i := range numFrames {
+		// convert `i` seconds to "HH:MM:SS.mmm"
+		timeStr := durationToFFmpegTimestamp(float32(i))
+		timeStamps = append(timeStamps, timeStr)
+	}
+
+	if len(timeStamps) == 0 {
+		return nil, nil, fmt.Errorf("no timestamps generated for slowPhash")
+	}
+
+	// returns at least one screenshot or errors
+	var buf bytes.Buffer
+	bmpBytes, err := vp.ScreenshotsAtTimestamps(v.Path, &buf, timeStamps)
+	if err != nil {
+		slog.Error("SlowPhash: error retrieving frames", slog.Any("error", err))
+		return nil, nil, err
+	}
+
+	var thumbIndex int
+	if len(bmpBytes) < 5 {
+		thumbIndex = 0
+	} else {
+		thumbIndex = 5
+	}
+	slog.Info("thumbIndex", "value:", thumbIndex)
+
+	var screenshot *models.Screenshots
+	var builder strings.Builder
+	for i, bmpData := range bmpBytes {
+		img, decErr := bmpDecodeBytes(bmpData)
+		if decErr != nil {
+			slog.Warn("SlowPhash: skipping broken frame", slog.Int("frameIndex", i), slog.Any("error", decErr))
+			continue
+		}
+		// store the decoded frame so we can display in UI
+		if i == thumbIndex {
+			screenshot = &models.Screenshots{Screenshots: []image.Image{img}}
+		}
+		os.WriteFile(fmt.Sprintf("test%d.bmp", i), bmpData, os.ModePerm)
+
+		// compute pHash (it handles grayscale etc...)
+		hash, hashErr := goimagehash.PerceptionHash(img)
+		if hashErr != nil {
+			slog.Warn("SlowPhash: skipping frame can't compute pHash", slog.Int("frameIndex", i), slog.Any("error", hashErr))
+			continue
+		}
+
+		// skip "p: "
+		builder.WriteString(hash.ToString()[2:])
+	}
+
+	combinedHash := builder.String()
+
+	if len(combinedHash) == 0 {
+		return nil, nil, fmt.Errorf("SlowPhash: no valid pHashes generated")
+	}
+
+		slog.Info("SlowPhash: computed multiple pHashes",
+			slog.String("file", v.FileName),
+			slog.Int("framesUsed", len(bmpBytes)),
+			slog.String("combinedHash", combinedHash),
+		)
+
+	pHash := &models.Videohash{
+		ID:        v.ID,
+		HashType:  "pHash",
+		HashValue: combinedHash,
+		Duration:  v.Duration,
+		Bucket:    -1,
+	}
+
+	return pHash, screenshot, nil
+}
+
+func bmpDecodeBytes(bmpData []byte) (image.Image, error) {
+	buf := bytes.NewReader(bmpData)
+	img, err := bmp.Decode(buf)
+	if err != nil {
+		return nil, fmt.Errorf("bmp decode failed: %w", err)
+	}
+	return img, nil
+}
+
+*/

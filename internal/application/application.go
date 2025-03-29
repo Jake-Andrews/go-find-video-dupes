@@ -2,10 +2,7 @@ package application
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"strconv"
@@ -22,8 +19,6 @@ import (
 	"govdupes/internal/videoprocessor"
 	"govdupes/internal/videoprocessor/ffprobe"
 	"govdupes/internal/vm"
-
-	"github.com/cespare/xxhash/v2"
 )
 
 type App struct {
@@ -228,136 +223,6 @@ func reconcileVideosWithDB(videosFromFS []*models.Video, dbVideos []*models.Vide
 	return results
 }
 
-func CalculateXXHash(h *xxhash.Digest, v *models.Video) error {
-	f, err := os.Open(v.Path)
-	if err != nil {
-		return fmt.Errorf("error opening file: %v", err)
-	}
-	defer f.Close()
-
-	offset := int64(0)
-	const bufferSize = 65536
-	buf := make([]byte, bufferSize)
-	eof := false
-
-	for {
-		n, readErr := f.ReadAt(buf, offset)
-		if errors.Is(readErr, io.EOF) {
-			buf = buf[:n]
-			eof = true
-		} else if readErr != nil {
-			return fmt.Errorf("error reading file: %v", readErr)
-		}
-		h.Write(buf)
-		if eof {
-			break
-		}
-		offset += int64(bufferSize)
-	}
-	return nil
-}
-
-func writeDuplicatesToJSON(dupeVideoIndexes [][]int, fVideos []*models.Video, outputPath string) error {
-	duplicateGroups := make([][]models.Video, len(dupeVideoIndexes))
-	for i, group := range dupeVideoIndexes {
-		duplicateGroups[i] = make([]models.Video, len(group))
-		for j, index := range group {
-			if index < 1 || index > len(fVideos) {
-				slog.Warn("Invalid index in group, skipping...",
-					slog.Int("index", index),
-					slog.Int("group", i))
-				continue
-			}
-			duplicateGroups[i][j] = *fVideos[index-1] // convert 1-based to 0-based index
-		}
-	}
-	data := map[string]any{
-		"duplicateGroups": duplicateGroups,
-	}
-	file, err := os.Create(outputPath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	encoder := json.NewEncoder(file)
-	encoder.SetIndent("", " ")
-	if err := encoder.Encode(data); err != nil {
-		return err
-	}
-	slog.Info("Duplicate groups successfully written to JSON", slog.String("output", outputPath))
-	return nil
-}
-
-// Helper to find matches by device+inode or size+xxhash
-func findMatchingVideo(
-	deviceInodeKey [2]uint64,
-	sizeHashKey [2]string,
-	deviceInodeMap map[[2]uint64]*models.Video,
-	sizeHashMap map[[2]string]*models.Video,
-) (*models.Video, bool) {
-	if vid, ok := deviceInodeMap[deviceInodeKey]; ok {
-		return vid, true
-	}
-	if vid, ok := sizeHashMap[sizeHashKey]; ok {
-		return vid, true
-	}
-	return nil, false
-}
-
-func generatePHashes(videosToCreate [][]*models.Video, a *App, UpdatePhashProgress func(progress float64)) {
-	videosToCreateLen := len(videosToCreate)
-	for i, group := range videosToCreate {
-		slog.Debug("Processing group", slog.Int("groupSize", len(group)))
-		progress := float64(i) / float64(videosToCreateLen)
-		UpdatePhashProgress(progress)
-
-		// If the first in the group already has a hash, reuse it
-		if group[0].FKVideoVideohash != 0 {
-			continue
-		}
-
-		pHash, screenshots, err := hash.Create(a.VideoProcessor, group[0], a.Config.DetectionMethod)
-		if err != nil {
-			slog.Warn("Skipping pHash generation",
-				slog.String("path", group[0].Path),
-				slog.Any("error", err))
-			continue
-		}
-
-		// If the phash is a solid color, skip
-		// **Rework, patch fix for slowhash**
-		solidColor := true
-		for i := 16; i < len(pHash.HashValue); i += 16 {
-			if !(strings.EqualFold(pHash.HashValue[i-16:i], "8000000000000000") ||
-				strings.EqualFold(pHash.HashValue[i-16:i], "0000000000000000")) {
-				solidColor = false
-				break
-			}
-		}
-
-		if solidColor {
-			slog.Warn("Skipping video with solid color pHash",
-				slog.String("path", group[0].Path),
-				slog.String("pHash", pHash.HashValue))
-			continue
-		}
-
-		for _, video := range group {
-			if err := a.VideoStore.CreateVideo(context.Background(), video, pHash, screenshots); err != nil {
-				slog.Error("FAILED to create video in DB",
-					slog.String("path", video.Path),
-					slog.Any("error", err))
-				continue
-			}
-			slog.Info("Created new video with pHash",
-				slog.String("path", video.Path),
-				slog.String("pHash", pHash.HashValue))
-		}
-	}
-	UpdatePhashProgress(1.0)
-}
-
 func generatePHashesParallel(videosToCreate [][]*models.Video, a *App, UpdatePhashProgress func(progress float64)) {
 	detectionMethod := a.Config.DetectionMethod
 	const workerCount = 5
@@ -436,12 +301,10 @@ func generatePHashesParallel(videosToCreate [][]*models.Video, a *App, UpdatePha
 					continue
 				}
 
-				// If the phash is a solid color, skip
-				// **Rework, patch fix for slowhash**
+				// skip video if pHashes are all solid colours
 				solidColor := true
 				for i := 16; i < len(pHash.HashValue); i += 16 {
-					if !(strings.EqualFold(pHash.HashValue[i-16:i], "8000000000000000") ||
-						strings.EqualFold(pHash.HashValue[i-16:i], "0000000000000000")) {
+					if !strings.EqualFold(pHash.HashValue[i-16:i], "8000000000000000") && !strings.EqualFold(pHash.HashValue[i-16:i], "0000000000000000") {
 						solidColor = false
 						break
 					}
@@ -494,49 +357,8 @@ func isSQLiteBusyError(err error) bool {
 	return strings.Contains(err.Error(), "database is locked")
 }
 
-func computeXXHashes(videos []*models.Video) []*models.Video {
-	var wg sync.WaitGroup
-	videoChan := make(chan *models.Video, len(videos))
-	validVideosChan := make(chan *models.Video, len(videos))
-
-	const workerCount = 16
-
-	for range workerCount {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for vid := range videoChan {
-				digest := xxhash.NewWithSeed(uint64(vid.Size))
-				if err := CalculateXXHash(digest, vid); err != nil {
-					slog.Error("XXHash failure",
-						slog.String("path", vid.Path),
-						slog.Any("error", err))
-					continue
-				}
-				vid.XXHash = strconv.FormatUint(digest.Sum64(), 10)
-				validVideosChan <- vid
-			}
-		}()
-	}
-
-	for _, vid := range videos {
-		videoChan <- vid
-	}
-	close(videoChan)
-
-	wg.Wait()
-	close(validVideosChan)
-
-	var validVideos []*models.Video
-	for vid := range validVideosChan {
-		validVideos = append(validVideos, vid)
-	}
-	return validVideos
-}
-
 func (a *App) DeleteVideosByID(ids []int64) error {
 	for _, id := range ids {
-		// your store delete call
 		if err := a.VideoStore.DeleteVideoByID(context.Background(), id); err != nil {
 			return err
 		}
@@ -632,3 +454,177 @@ func GetFFprobeInfo(videosNotInDB []*models.Video, vm vm.ViewModel) []*models.Vi
 	vm.UpdateGetFileInfoProgress(1.0)
 	return validVideos
 }
+
+/*
+func generatePHashes(videosToCreate [][]*models.Video, a *App, UpdatePhashProgress func(progress float64)) {
+	videosToCreateLen := len(videosToCreate)
+	for i, group := range videosToCreate {
+		slog.Debug("Processing group", slog.Int("groupSize", len(group)))
+		progress := float64(i) / float64(videosToCreateLen)
+		UpdatePhashProgress(progress)
+
+		// If the first in the group already has a hash, reuse it
+		if group[0].FKVideoVideohash != 0 {
+			continue
+		}
+
+		pHash, screenshots, err := hash.Create(a.VideoProcessor, group[0], a.Config.DetectionMethod)
+		if err != nil {
+			slog.Warn("Skipping pHash generation",
+				slog.String("path", group[0].Path),
+				slog.Any("error", err))
+			continue
+		}
+
+		// If the phash is a solid color, skip
+		// **Rework, patch fix for slowhash**
+		solidColor := true
+		for i := 16; i < len(pHash.HashValue); i += 16 {
+			if !(strings.EqualFold(pHash.HashValue[i-16:i], "8000000000000000") ||
+				strings.EqualFold(pHash.HashValue[i-16:i], "0000000000000000")) {
+				solidColor = false
+				break
+			}
+		}
+
+		if solidColor {
+			slog.Warn("Skipping video with solid color pHash",
+				slog.String("path", group[0].Path),
+				slog.String("pHash", pHash.HashValue))
+			continue
+		}
+
+		for _, video := range group {
+			if err := a.VideoStore.CreateVideo(context.Background(), video, pHash, screenshots); err != nil {
+				slog.Error("FAILED to create video in DB",
+					slog.String("path", video.Path),
+					slog.Any("error", err))
+				continue
+			}
+			slog.Info("Created new video with pHash",
+				slog.String("path", video.Path),
+				slog.String("pHash", pHash.HashValue))
+		}
+	}
+	UpdatePhashProgress(1.0)
+}
+
+func computeXXHashes(videos []*models.Video) []*models.Video {
+	var wg sync.WaitGroup
+	videoChan := make(chan *models.Video, len(videos))
+	validVideosChan := make(chan *models.Video, len(videos))
+
+	const workerCount = 16
+
+	for range workerCount {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for vid := range videoChan {
+				digest := xxhash.NewWithSeed(uint64(vid.Size))
+				if err := CalculateXXHash(digest, vid); err != nil {
+					slog.Error("XXHash failure",
+						slog.String("path", vid.Path),
+						slog.Any("error", err))
+					continue
+				}
+				vid.XXHash = strconv.FormatUint(digest.Sum64(), 10)
+				validVideosChan <- vid
+			}
+		}()
+	}
+
+	for _, vid := range videos {
+		videoChan <- vid
+	}
+	close(videoChan)
+
+	wg.Wait()
+	close(validVideosChan)
+
+	var validVideos []*models.Video
+	for vid := range validVideosChan {
+		validVideos = append(validVideos, vid)
+	}
+	return validVideos
+}
+
+// Helper to find matches by device+inode or size+xxhash
+func findMatchingVideo(
+	deviceInodeKey [2]uint64,
+	sizeHashKey [2]string,
+	deviceInodeMap map[[2]uint64]*models.Video,
+	sizeHashMap map[[2]string]*models.Video,
+) (*models.Video, bool) {
+	if vid, ok := deviceInodeMap[deviceInodeKey]; ok {
+		return vid, true
+	}
+	if vid, ok := sizeHashMap[sizeHashKey]; ok {
+		return vid, true
+	}
+	return nil, false
+}
+
+func writeDuplicatesToJSON(dupeVideoIndexes [][]int, fVideos []*models.Video, outputPath string) error {
+	duplicateGroups := make([][]models.Video, len(dupeVideoIndexes))
+	for i, group := range dupeVideoIndexes {
+		duplicateGroups[i] = make([]models.Video, len(group))
+		for j, index := range group {
+			if index < 1 || index > len(fVideos) {
+				slog.Warn("Invalid index in group, skipping...",
+					slog.Int("index", index),
+					slog.Int("group", i))
+				continue
+			}
+			duplicateGroups[i][j] = *fVideos[index-1] // convert 1-based to 0-based index
+		}
+	}
+	data := map[string]any{
+		"duplicateGroups": duplicateGroups,
+	}
+	file, err := os.Create(outputPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", " ")
+	if err := encoder.Encode(data); err != nil {
+		return err
+	}
+	slog.Info("Duplicate groups successfully written to JSON", slog.String("output", outputPath))
+	return nil
+}
+
+func CalculateXXHash(h *xxhash.Digest, v *models.Video) error {
+	f, err := os.Open(v.Path)
+	if err != nil {
+		return fmt.Errorf("error opening file: %v", err)
+	}
+	defer f.Close()
+
+	offset := int64(0)
+	const bufferSize = 65536
+	buf := make([]byte, bufferSize)
+	eof := false
+
+	for {
+		n, readErr := f.ReadAt(buf, offset)
+		if errors.Is(readErr, io.EOF) {
+			buf = buf[:n]
+			eof = true
+		} else if readErr != nil {
+			return fmt.Errorf("error reading file: %v", readErr)
+		}
+		h.Write(buf)
+		if eof {
+			break
+		}
+		offset += int64(bufferSize)
+	}
+	return nil
+}
+
+
+*/

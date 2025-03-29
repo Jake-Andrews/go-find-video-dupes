@@ -41,7 +41,7 @@ func CreateUI(appInstance *application.App, vm vm.ViewModel) {
 	sortSelectTab := buildSortSelectDeleteTab(duplicatesView, vm)
 	filterForm, checkWidget := buildFilter(duplicatesView)
 
-	configTab := buildConfigTab(appInstance.Config, checkWidget, vm)
+	configTab := buildConfigTab(appInstance.Config, window, checkWidget, vm)
 	searchTab := buildSearchTab(appInstance, window, vm)
 	statisticsTab := buildStatisticsTab(vm)
 

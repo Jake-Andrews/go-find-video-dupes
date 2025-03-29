@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -9,6 +10,7 @@ import (
 )
 
 // changes here also have to be done to ConvertConfigToFormStruct / config UI
+// **go back and properly implement SaveSC/and others**
 type Config struct {
 	DatabasePath        string
 	LogFilePath         string
@@ -50,22 +52,23 @@ func (c *Config) SetDefaults() {
 }
 
 // validateStartingDirs ensures starting directories exist and are actually dirs
-func ValidateStartingDirs(c *Config) {
+func ValidateStartingDirs(c *Config) error {
 	for i, dir := range c.StartingDirs {
 		f, err := os.Open(dir)
 		if err != nil {
 			slog.Error("Error opening dir",
 				slog.String("dir", dir),
 				slog.Any("error", err))
-			os.Exit(1)
+			return fmt.Errorf("failed to open directory %s: %w", dir, err)
 		}
+		defer f.Close()
 
 		abs, err := filepath.Abs(dir)
 		if err != nil {
 			slog.Error("Error getting the absolute path for dir",
 				slog.String("dir", dir),
 				slog.Any("error", err))
-			os.Exit(1)
+			return fmt.Errorf("failed to get absolute path for %s: %w", dir, err)
 		}
 		c.StartingDirs[i] = abs
 
@@ -74,18 +77,19 @@ func ValidateStartingDirs(c *Config) {
 			slog.Error("Directory does not exist",
 				slog.String("dir", dir),
 				slog.Any("error", err))
-			os.Exit(1)
+			return fmt.Errorf("directory does not exist: %s", dir)
 		} else if err != nil {
 			slog.Error("Error calling stat on dir",
 				slog.String("dir", dir),
 				slog.Any("error", err))
-			os.Exit(1)
+			return fmt.Errorf("failed to stat directory %s: %w", dir, err)
 		}
 		if !fsInfo.IsDir() {
 			slog.Error("Path is not a valid directory", slog.String("dir", dir))
-			os.Exit(1)
+			return fmt.Errorf("path is not a valid directory: %s", dir)
 		}
 	}
+	return nil
 }
 
 func SetupLogger(logFilePath string) *slog.Logger {
