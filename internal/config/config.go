@@ -25,7 +25,10 @@ type Config struct {
 	FollowSymbolicLinks bool
 	SkipSymbolicLinks   bool
 	SilentFFmpeg        bool
-	DetectionMethod     string
+	// hash / compare method
+	DetectionMethod string
+	HashType        int // id of the row from the "HashType" table
+	SearchMethod    int // id of the row from the "SearchMethod" table
 }
 
 // "3gp", "3g2", "mpeg", "mpg", "ts", "m2ts", "mts", "vob", "rm", "rmvb", "asf", "ogv", "ogm", "mxf", "divx", "dv", "xvid", "f4v"
@@ -48,6 +51,8 @@ func (c *Config) SetDefaults() {
 	c.SilentFFmpeg = true
 	c.FilesizeCutoff = 0
 	c.DetectionMethod = "FastPhash"
+	c.HashType = -1
+	c.SearchMethod = -1
 	ValidateStartingDirs(c)
 }
 

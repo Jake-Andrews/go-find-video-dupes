@@ -17,6 +17,12 @@ import (
 	"golang.org/x/image/bmp"
 )
 
+// hash ->
+
+func GenerateHashes(videoPaths string) (string, error) {
+	return "", nil
+}
+
 func Create(vp *videoprocessor.FFmpegWrapper, v *models.Video, method string) (*models.Videohash, *models.Screenshots, error) {
 	switch method {
 	case "SlowPhash":

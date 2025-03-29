@@ -32,14 +32,149 @@ type formStruct struct {
 	DetectionMethod  string
 }
 
-// creates a UI for reading/writing the config.Config object.
-// also allows the user to select & create the HashType and SearchMethod
+func buildHashType() fyne.CanvasObject {
+	methodOptions := []string{"Slow", "Fast"}
+	methodSelect := widget.NewSelect(methodOptions, nil)
+	methodSelect.PlaceHolder = "Choose a hash method"
+
+	// slow
+	percentToSkip := 0.1
+	data := binding.BindFloat(&percentToSkip)
+	label := widget.NewLabel("% of start & end to skip: ")
+	entry := widget.NewEntryWithData(binding.FloatToString(data))
+	floats := container.NewGridWithColumns(2, label, entry)
+
+	slide := widget.NewSliderWithData(0, 1, data)
+	slide.Step = 0.01
+
+	slowFramesEntry := widget.NewEntry()
+	slowFramesEntry.SetPlaceHolder("Number of frames per second to hash (>=1)")
+
+	slowSkipEntry := widget.NewEntry()
+	slowSkipEntry.SetPlaceHolder("% of start/end to skip")
+
+	slowContainer := container.NewVBox(
+		widget.NewLabel("Slow Method Settings"),
+		widget.NewForm(
+			widget.NewFormItem("Number of Frames", slowFramesEntry),
+			widget.NewFormItem("Skip (Start/End)", slowSkipEntry),
+		),
+	)
+
+	// fast
+	fastFPSEntry := widget.NewEntry()
+	fastFPSEntry.SetPlaceHolder("FPS to hash")
+
+	fastSkipEntry := widget.NewEntry()
+	fastSkipEntry.SetPlaceHolder("% of start/end to skip")
+
+	fastContainer := container.NewVBox(
+		widget.NewLabel("Fast Method Settings"),
+		widget.NewForm(
+			widget.NewFormItem("FPS to Hash", fastFPSEntry),
+			widget.NewFormItem("Skip (Start/End)", fastSkipEntry),
+		),
+	)
+
+	// hide containers until the user selects a method
+	slowContainer.Hide()
+	fastContainer.Hide()
+
+	methodSelect.OnChanged = func(method string) {
+		switch method {
+		case "Slow":
+			slowContainer.Show()
+			fastContainer.Hide()
+		case "Fast":
+			slowContainer.Hide()
+			fastContainer.Show()
+		}
+	}
+
+	return container.NewVBox(
+		widget.NewLabel("Hash Type"),
+		methodSelect,
+		slowContainer,
+		fastContainer,
+	)
+}
+
+func buildCompareMethod() fyne.CanvasObject {
+	// Options for compare method
+	compareOptions := []string{"Duplicate Detection", "LCS"}
+	compareSelect := widget.NewSelect(compareOptions, nil)
+	compareSelect.PlaceHolder = "Choose a compare method"
+
+	// Duplicate Detection fields
+	ddFramesMatchEntry := widget.NewEntry()
+	ddFramesMatchEntry.SetPlaceHolder("Number of frames that need to match")
+
+	hammingDistanceEntry := widget.NewEntry()
+	hammingDistanceEntry.SetPlaceHolder("Hamming distance threshold")
+
+	duplicateDetectionContainer := container.NewVBox(
+		widget.NewLabel("(Slow) Standard Detection Settings"),
+		widget.NewForm(
+			widget.NewFormItem("Frames to Match", ddFramesMatchEntry),
+			widget.NewFormItem("Hamming Distance", hammingDistanceEntry),
+		),
+	)
+
+	// LCS fields
+	lcsWindowSizeEntry := widget.NewEntry()
+	lcsWindowSizeEntry.SetPlaceHolder("Sliding window size")
+
+	lcsHammingDistanceEntry := widget.NewEntry()
+	lcsHammingDistanceEntry.SetPlaceHolder("Hamming distance threshold")
+
+	lcsLengthNeededEntry := widget.NewEntry()
+	lcsLengthNeededEntry.SetPlaceHolder("LCS length needed for a match")
+
+	partialFullMatchEntry := widget.NewEntry()
+	partialFullMatchEntry.SetPlaceHolder("Partial/Full match thresholds")
+
+	lcsContainer := container.NewVBox(
+		widget.NewLabel("(Slow) LCS-Based Detection Settings"),
+		widget.NewForm(
+			widget.NewFormItem("Sliding Window Size", lcsWindowSizeEntry),
+			widget.NewFormItem("Hamming Dist.", lcsHammingDistanceEntry),
+			widget.NewFormItem("LCS Length", lcsLengthNeededEntry),
+			widget.NewFormItem("Match Thresholds", partialFullMatchEntry),
+		),
+	)
+
+	duplicateDetectionContainer.Hide()
+	lcsContainer.Hide()
+
+	compareSelect.OnChanged = func(method string) {
+		switch method {
+		case "Duplicate Detection":
+			duplicateDetectionContainer.Show()
+			lcsContainer.Hide()
+		case "LCS":
+			duplicateDetectionContainer.Hide()
+			lcsContainer.Show()
+		}
+	}
+
+	return container.NewVBox(
+		widget.NewLabel("Compare Method"),
+		compareSelect,
+		duplicateDetectionContainer,
+		lcsContainer,
+	)
+}
+
+// Although were using data binding the Config is not updated until the
+// form.OnSubmit is called. This is because some fields in the config struct
+// need to be converted (string in UI -> []string in config).
+// **Should fix this later**
 func buildConfigTab(cfg *config.Config, w fyne.Window, checkWidget *widget.Check, myViewModel vm.ViewModel) fyne.CanvasObject {
 	formStruct := ConvertConfigToFormStruct(cfg)
 	formData := binding.BindStruct(&formStruct)
 	form := newFormWithData(formData)
 
-	// append this here because it adopts the form "look", looks out of place
+	// append here because it adopts the form "look", looks out of place otherwise
 	form.Append("check", checkWidget)
 
 	// directories to search
@@ -117,8 +252,19 @@ func buildConfigTab(cfg *config.Config, w fyne.Window, checkWidget *widget.Check
 	)
 	listPanel := container.NewBorder(btnsDirEntry, nil, nil, nil, dirList)
 
+	hashType := buildHashType()
+	compareMethod := buildCompareMethod()
+
+	rightSide := container.NewVBox(
+		form,
+		widget.NewSeparator(),
+		hashType,
+		widget.NewSeparator(),
+		compareMethod,
+	)
+
 	// places the directory list and the config form side by side
-	content := container.NewGridWithColumns(2, listPanel, form)
+	content := container.NewGridWithColumns(2, listPanel, rightSide)
 
 	// copy formStruct fields back into cfg
 	form.OnSubmit = func() {
