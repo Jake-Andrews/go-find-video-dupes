@@ -35,7 +35,8 @@ func buildSortSelectDeleteTab(duplicatesView *DuplicatesListView, vm vm.ViewMode
 	})
 
 	// Hardlink
-	hardlinkLabel := widget.NewLabel("Hardlink selected videos. Need 2+ videos selected per group.")
+	hardlinkLabel := widget.NewLabel("Hardlink (per group) selected videos to first video. Need 2+ videos selected per group.")
+	// https://github.com/dweymouth/fyne-tooltip
 	hardlinkButton := widget.NewButton("Hardlink", func() {
 		err := duplicatesView.vm.HardlinkVideos()
 		if err != nil {

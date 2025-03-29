@@ -1,4 +1,3 @@
-// duplicate.go
 package duplicate
 
 import (

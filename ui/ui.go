@@ -23,7 +23,7 @@ import (
 func CreateUI(appInstance *application.App, vm vm.ViewModel) {
 	slog.Info("Starting CreateUI")
 
-	// fyne app
+	// fyne
 	a := app.New()
 	window := a.NewWindow("govdupes")
 
@@ -129,6 +129,7 @@ func buildSearchTab(appInstance *application.App, parent fyne.Window, vm vm.View
 
 			close(stopChan)
 			d.Hide()
+			vm.ResetSearchBindings()
 		}),
 	)
 

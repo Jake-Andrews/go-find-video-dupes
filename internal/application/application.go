@@ -317,7 +317,7 @@ func generatePHashes(videosToCreate [][]*models.Video, a *App, UpdatePhashProgre
 			continue
 		}
 
-		pHash, screenshots, err := hash.Create(a.VideoProcessor, group[0])
+		pHash, screenshots, err := hash.Create(a.VideoProcessor, group[0], a.Config.DetectionMethod)
 		if err != nil {
 			slog.Warn("Skipping pHash generation",
 				slog.String("path", group[0].Path),
@@ -326,8 +326,17 @@ func generatePHashes(videosToCreate [][]*models.Video, a *App, UpdatePhashProgre
 		}
 
 		// If the phash is a solid color, skip
-		if strings.EqualFold(pHash.HashValue, "8000000000000000") ||
-			strings.EqualFold(pHash.HashValue, "0000000000000000") {
+		// **Rework, patch fix for slowhash**
+		solidColor := true
+		for i := 16; i < len(pHash.HashValue); i += 16 {
+			if !(strings.EqualFold(pHash.HashValue[i-16:i], "8000000000000000") ||
+				strings.EqualFold(pHash.HashValue[i-16:i], "0000000000000000")) {
+				solidColor = false
+				break
+			}
+		}
+
+		if solidColor {
 			slog.Warn("Skipping video with solid color pHash",
 				slog.String("path", group[0].Path),
 				slog.String("pHash", pHash.HashValue))
@@ -350,6 +359,7 @@ func generatePHashes(videosToCreate [][]*models.Video, a *App, UpdatePhashProgre
 }
 
 func generatePHashesParallel(videosToCreate [][]*models.Video, a *App, UpdatePhashProgress func(progress float64)) {
+	detectionMethod := a.Config.DetectionMethod
 	const workerCount = 5
 	const maxBatchSize = 10
 	const maxRetries = 5
@@ -419,16 +429,28 @@ func generatePHashesParallel(videosToCreate [][]*models.Video, a *App, UpdatePha
 					continue
 				}
 
-				pHash, screenshots, err := hash.Create(a.VideoProcessor, group[0])
+				pHash, screenshots, err := hash.Create(a.VideoProcessor, group[0], detectionMethod)
 				if err != nil {
 					slog.Warn("Skipping pHash generation", slog.String("path", group[0].Path), slog.Any("error", err))
 					progressChan <- 1.0 / float64(len(videosToCreate))
 					continue
 				}
 
-				if strings.EqualFold(pHash.HashValue, "8000000000000000") ||
-					strings.EqualFold(pHash.HashValue, "0000000000000000") {
-					slog.Warn("Skipping video with solid color pHash", slog.String("path", group[0].Path), slog.String("pHash", pHash.HashValue))
+				// If the phash is a solid color, skip
+				// **Rework, patch fix for slowhash**
+				solidColor := true
+				for i := 16; i < len(pHash.HashValue); i += 16 {
+					if !(strings.EqualFold(pHash.HashValue[i-16:i], "8000000000000000") ||
+						strings.EqualFold(pHash.HashValue[i-16:i], "0000000000000000")) {
+						solidColor = false
+						break
+					}
+				}
+
+				if solidColor {
+					slog.Warn("Skipping video with solid color pHash",
+						slog.String("path", group[0].Path),
+						slog.String("pHash", pHash.HashValue))
 					progressChan <- 1.0 / float64(len(videosToCreate))
 					continue
 				}

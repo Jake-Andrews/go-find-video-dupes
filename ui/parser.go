@@ -1,7 +1,5 @@
 package ui
 
-// parser.go
-
 import (
 	"strings"
 

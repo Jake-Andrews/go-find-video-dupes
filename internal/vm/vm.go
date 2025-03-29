@@ -58,4 +58,5 @@ type ViewModel interface {
 	UpdateStatistics(group [][]*models.VideoData)
 	GetPotentialSpaceSavingsBind() binding.String
 	GetTotalGroupSizeBind() binding.String
+	ResetSearchBindings()
 }

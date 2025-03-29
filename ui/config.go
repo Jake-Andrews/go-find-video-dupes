@@ -28,6 +28,7 @@ type formStruct struct {
 	SkipSymbolic     bool
 	SilentFFmpeg     bool
 	FilesizeCutoff   int64
+	DetectionMethod  string
 }
 
 // creates a UI for reading/writing the config.Config object.
@@ -132,6 +133,7 @@ func buildConfigTab(cfg *config.Config, checkWidget *widget.Check, myViewModel v
 		cfg.SkipSymbolicLinks = formStruct.SkipSymbolic
 		cfg.SilentFFmpeg = formStruct.SilentFFmpeg
 		cfg.FilesizeCutoff = formStruct.FilesizeCutoff
+		cfg.DetectionMethod = formStruct.DetectionMethod
 
 		// read out each directory from the binding
 		length := startingDirs.Length()
@@ -167,6 +169,7 @@ func ConvertConfigToFormStruct(cfg *config.Config) formStruct {
 		SkipSymbolic:     cfg.SkipSymbolicLinks,
 		SilentFFmpeg:     cfg.SilentFFmpeg,
 		FilesizeCutoff:   cfg.FilesizeCutoff,
+		DetectionMethod:  cfg.DetectionMethod,
 	}
 }
 
@@ -183,7 +186,11 @@ func newFormWithData(data binding.DataMap) *widget.Form {
 			items[i] = widget.NewFormItem(k, widget.NewLabel(err.Error()))
 			continue
 		}
-		items[i] = widget.NewFormItem(k, createBoundItem(sub))
+		if k == "DetectionMethod" {
+			items[i] = widget.NewFormItem(k, createDetectionSelect(sub))
+		} else {
+			items[i] = widget.NewFormItem(k, createBoundItem(sub))
+		}
 	}
 
 	return widget.NewForm(items...)
@@ -201,6 +208,25 @@ func createBoundItem(v binding.DataItem) fyne.CanvasObject {
 	default:
 		return widget.NewLabel("")
 	}
+}
+
+func createDetectionSelect(data binding.DataItem) fyne.CanvasObject {
+	strBinding, ok := data.(binding.String)
+	if !ok {
+		return widget.NewLabel("Invalid binding")
+	}
+
+	selectWidget := widget.NewSelect([]string{"SlowPhash", "FastPhash"}, func(selected string) {
+		strBinding.Set(selected)
+	})
+
+	// Bind initial value
+	current, err := strBinding.Get()
+	if err == nil {
+		selectWidget.SetSelected(current)
+	}
+
+	return selectWidget
 }
 
 // splitAndTrim splits a string by commas, then trims each piece.

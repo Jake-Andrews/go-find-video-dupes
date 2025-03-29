@@ -105,7 +105,7 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string, onFileFoun
 				return nil
 			}
 
-			video := createVideo(path, fileInfo, *fileID)
+			video := CreateVideo(path, fileInfo, *fileID)
 			videos = append(videos, &video)
 			acceptedFiles++
 			onFileAccepted(acceptedFiles)
@@ -121,7 +121,7 @@ func getVideosFromFS(fileSystem fs.FS, c *config.Config, root string, onFileFoun
 	return videos
 }
 
-func createVideo(path string, fileInfo os.FileInfo, fileID FileIdentity) models.Video {
+func CreateVideo(path string, fileInfo os.FileInfo, fileID FileIdentity) models.Video {
 	video := models.Video{
 		Path:           path,
 		FileName:       fileInfo.Name(),

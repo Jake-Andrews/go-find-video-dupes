@@ -949,3 +949,33 @@ func (vm *viewModel) UpdateStatistics(groups [][]*models.VideoData) {
 		slog.Error("Failed to update PotentialSpaceSavings", "error", err)
 	}
 }
+
+func (vm *viewModel) ResetSearchBindings() {
+	/*
+		FileCount             binding.String
+		AcceptedFiles         binding.String
+		GetFileInfoProgress   binding.Float
+		GenPHashesProgress    binding.Float
+		TotalGroupSize        binding.String
+		PotentialSpaceSavings binding.String
+	*/
+
+	if err := vm.FileCount.Set("0"); err != nil {
+		slog.Error("Failed to reset FileCount", "error", err)
+	}
+	if err := vm.AcceptedFiles.Set("0"); err != nil {
+		slog.Error("Failed to reset AcceptedFiles", "error", err)
+	}
+	if err := vm.GetFileInfoProgress.Set(0); err != nil {
+		slog.Error("Failed to reset GetFileInfoProgress", "error", err)
+	}
+	if err := vm.GenPHashesProgress.Set(0); err != nil {
+		slog.Error("Failed to reset GenPHashesProgress", "error", err)
+	}
+	if err := vm.TotalGroupSize.Set(""); err != nil {
+		slog.Error("Failed to reset TotalGroupSize", "error", err)
+	}
+	if err := vm.PotentialSpaceSavings.Set(""); err != nil {
+		slog.Error("Failed to reset PotentialSpaceSavings", "error", err)
+	}
+}

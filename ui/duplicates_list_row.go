@@ -1,4 +1,3 @@
-// duplicates_list_row.go
 package ui
 
 import (

@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 )
 
-// modify ConvertConfigToFormStruct / config UI as well
+// changes here also have to be done to ConvertConfigToFormStruct / config UI
 type Config struct {
 	DatabasePath        string
 	LogFilePath         string
@@ -23,6 +23,7 @@ type Config struct {
 	FollowSymbolicLinks bool
 	SkipSymbolicLinks   bool
 	SilentFFmpeg        bool
+	DetectionMethod     string
 }
 
 // "3gp", "3g2", "mpeg", "mpg", "ts", "m2ts", "mts", "vob", "rm", "rmvb", "asf", "ogv", "ogm", "mxf", "divx", "dv", "xvid", "f4v"
@@ -44,10 +45,11 @@ func (c *Config) SetDefaults() {
 	c.SkipSymbolicLinks = true
 	c.SilentFFmpeg = true
 	c.FilesizeCutoff = 0
+	c.DetectionMethod = "FastPhash"
 	ValidateStartingDirs(c)
 }
 
-// validateStartingDirs ensures starting directories exist and are actually dirs.
+// validateStartingDirs ensures starting directories exist and are actually dirs
 func ValidateStartingDirs(c *Config) {
 	for i, dir := range c.StartingDirs {
 		f, err := os.Open(dir)
