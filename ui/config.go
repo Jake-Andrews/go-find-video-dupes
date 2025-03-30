@@ -40,9 +40,9 @@ func buildHashType() fyne.CanvasObject {
 	// slow
 	percentToSkip := 0.1
 	data := binding.BindFloat(&percentToSkip)
-	label := widget.NewLabel("% of start & end to skip: ")
-	entry := widget.NewEntryWithData(binding.FloatToString(data))
-	floats := container.NewGridWithColumns(2, label, entry)
+	// label := widget.NewLabel("% of start & end to skip: ")
+	// entry := widget.NewEntryWithData(binding.FloatToString(data))
+	// floats := container.NewGridWithColumns(2, label, entry)
 
 	slide := widget.NewSliderWithData(0, 1, data)
 	slide.Step = 0.01
@@ -282,7 +282,6 @@ func buildConfigTab(cfg *config.Config, w fyne.Window, checkWidget *widget.Check
 		cfg.SkipSymbolicLinks = formStruct.SkipSymbolic
 		cfg.SilentFFmpeg = formStruct.SilentFFmpeg
 		cfg.FilesizeCutoff = formStruct.FilesizeCutoff
-		cfg.DetectionMethod = formStruct.DetectionMethod
 
 		// read out each directory from the binding
 		length := startingDirs.Length()
@@ -322,7 +321,6 @@ func ConvertConfigToFormStruct(cfg *config.Config) formStruct {
 		SkipSymbolic:     cfg.SkipSymbolicLinks,
 		SilentFFmpeg:     cfg.SilentFFmpeg,
 		FilesizeCutoff:   cfg.FilesizeCutoff,
-		DetectionMethod:  cfg.DetectionMethod,
 	}
 }
 

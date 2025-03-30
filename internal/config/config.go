@@ -7,6 +7,13 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+
+	"govdupes/internal/comparer"
+	"govdupes/internal/comparer/compare"
+	"govdupes/internal/hasher"
+	"govdupes/internal/hasher/hash"
+	"govdupes/internal/sampler"
+	"govdupes/internal/sampler/sample"
 )
 
 // changes here also have to be done to ConvertConfigToFormStruct / config UI
@@ -25,18 +32,76 @@ type Config struct {
 	FollowSymbolicLinks bool
 	SkipSymbolicLinks   bool
 	SilentFFmpeg        bool
-	// hash / compare method
-	DetectionMethod string
-	HashType        int // id of the row from the "HashType" table
-	SearchMethod    int // id of the row from the "SearchMethod" table
+	// ----
+	SamplerType SamplerType
+	Slow        sample.SlowSampler
+	Fast        sample.FastSampler
+	//
+	HasherType HasherType
+	Phash      hash.Phasher
+	//
+	CompareType ComparerType
+	Pair        compare.PairComparer
+	LCS         compare.LCSComparer
+}
+
+type SamplerType int
+
+const (
+	SlowSampler SamplerType = iota
+	FastSampler
+)
+
+func BuildSamplerFromConfig(cfg Config) sampler.Sampler {
+	switch cfg.SamplerType {
+	case SlowSampler:
+		return &cfg.Slow
+	case FastSampler:
+		return &cfg.Fast
+	default:
+		return nil
+	}
+}
+
+type HasherType int
+
+const (
+	Phash HasherType = iota
+)
+
+func BuildHasherFromConfig(cfg Config) hasher.Hasher {
+	switch cfg.HasherType {
+	case Phash:
+		return &cfg.Phash
+	default:
+		return nil
+	}
+}
+
+type ComparerType int
+
+const (
+	Pair ComparerType = iota
+	LCS
+)
+
+func BuildComparerFromConfig(cfg Config) comparer.Comparer {
+	switch cfg.CompareType {
+	case Pair:
+		return &cfg.Pair
+	case LCS:
+		return &cfg.LCS
+	default:
+		return nil
+	}
 }
 
 // "3gp", "3g2", "mpeg", "mpg", "ts", "m2ts", "mts", "vob", "rm", "rmvb", "asf", "ogv", "ogm", "mxf", "divx", "dv", "xvid", "f4v"
 func (c *Config) SetDefaults() {
 	slog.Info("Setting default config options")
-	c.StartingDirs = []string{"."}
 	c.DatabasePath = "./videos.db"
 	c.LogFilePath = "app.log"
+	c.StartingDirs = []string{"."}
 	c.IgnoreStr = []string{}
 	c.IncludeStr = []string{}
 	c.IgnoreExt = []string{}
@@ -44,16 +109,26 @@ func (c *Config) SetDefaults() {
 		"mp4", "m4a", "m4v", "webm", "mkv", "mov", "avi",
 		"wmv", "flv",
 	}
+	c.FilesizeCutoff = 0
 	c.SaveSC = true
 	c.AbsPath = true
 	c.FollowSymbolicLinks = true
 	c.SkipSymbolicLinks = true
 	c.SilentFFmpeg = true
-	c.FilesizeCutoff = 0
-	c.DetectionMethod = "FastPhash"
-	c.HashType = -1
-	c.SearchMethod = -1
-	ValidateStartingDirs(c)
+	ValidateStartingDirs(c) // on the random chance that "." is fucked
+
+	// -- --
+
+	c.SamplerType = FastSampler
+	c.Slow = sample.SlowSampler{SkipPercent: 0.1, FPS: 1.0}
+	c.Fast = sample.FastSampler{SkipPercent: 0.1, Frames: 4}
+	// -- --
+	c.HasherType = Phash
+	c.Phash = hash.Phasher{}
+	// -- --
+	c.CompareType = Pair
+	c.Pair = compare.PairComparer{}
+	c.LCS = compare.LCSComparer{}
 }
 
 // validateStartingDirs ensures starting directories exist and are actually dirs

@@ -17,12 +17,18 @@ import (
 	"golang.org/x/image/bmp"
 )
 
-// hash ->
+type Phasher struct{}
+
+func (p *Phasher) CreateHash([]byte) models.Videohash {
+	return models.Videohash{}
+}
 
 func GenerateHashes(videoPaths string) (string, error) {
 	return "", nil
 }
 
+// **should only contain the logic needed to create a hash**
+// **sampler deals with goroutines**
 func Create(vp *videoprocessor.FFmpegWrapper, v *models.Video, method string) (*models.Videohash, *models.Screenshots, error) {
 	switch method {
 	case "SlowPhash":

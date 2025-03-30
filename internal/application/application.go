@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -14,7 +13,7 @@ import (
 	store "govdupes/internal/db"
 	"govdupes/internal/duplicate"
 	"govdupes/internal/filesystem"
-	"govdupes/internal/hash"
+	"govdupes/internal/hasher/hash"
 	"govdupes/internal/models"
 	"govdupes/internal/videoprocessor"
 	"govdupes/internal/videoprocessor/ffprobe"
@@ -31,14 +30,10 @@ func NewApplication(c *config.Config, vs store.VideoStore, vp *videoprocessor.FF
 	return &App{Config: c, VideoStore: vs, VideoProcessor: vp}
 }
 
-// **revise entangled god function**
-func (a *App) Search(vm vm.ViewModel) error {
-	dbVideos, err := a.VideoStore.GetAllVideos(context.Background())
-	if err != nil {
-		slog.Error("Error getting videos from DB", slog.Any("error", err))
-		os.Exit(1)
-	}
-
+// SearchFS / Reconcile FS videos with DB videos / Create Videos in DB
+// **Return error/info to UI (no videos found/match, fs is fucked, etc...**
+func (a *App) SearchFS(vm vm.ViewModel) [][]*models.Video {
+	// -- Search FS for videos --
 	fsVideos := filesystem.SearchDirs(a.Config,
 		func(a int) {
 			vm.UpdateFileCount(fmt.Sprintf("%d files found...", a))
@@ -53,32 +48,37 @@ func (a *App) Search(vm vm.ViewModel) error {
 		return nil
 	}
 
-	// Filter out any "files" that are already in DB (based on dev/inode and path)
+	// -- Logic to avoid unncessary work on videos already in DB or hardlinks --
+
+	// Get videos from DB then Filter out any files (links) that are
+	// already in DB (based on dev/inode and path)
+	dbVideos, err := a.VideoStore.GetAllVideos(context.Background())
+	if err != nil {
+		slog.Error("Error getting videos from DB", slog.Any("error", err))
+		os.Exit(1)
+	}
+
 	videosNotInDB := reconcileVideosWithDB(fsVideos, dbVideos)
 	if len(videosNotInDB) == 0 {
 		slog.Info("All files found are already in the database. Finished searching FS!")
 		return nil
 	}
 
+	// Filter corrupt videos
 	validVideos := GetFFprobeInfo(videosNotInDB, vm)
+
 	// Build DB lookups for device/inode and size/xxhash
 	deviceInodeToDBVideo := make(map[[2]uint64]*models.Video, len(dbVideos))
-	sizeHashToDBVideo := make(map[[2]string]*models.Video, len(dbVideos))
-
 	for _, v := range dbVideos {
 		keyDevIno := [2]uint64{v.Device, v.Inode}
 		deviceInodeToDBVideo[keyDevIno] = v
-
-		if v.Size > 0 && v.XXHash != "" {
-			keySizeHash := [2]string{strconv.FormatInt(v.Size, 10), v.XXHash}
-			sizeHashToDBVideo[keySizeHash] = v
-		}
 	}
 
 	// Decide if a video matches an existing DB video or is truly new.
-	// If it matches (hardlink or exact duplicate), reuse that video’s existing phash info.
+	// If it matches (hardlink or exact duplicate)
+	// reuse that video’s existing phash info by setting it's FKVideoHash
 	var videosReuseHash []*models.Video
-	var vNotRelatedToDB []*models.Video
+	var videosNewHash []*models.Video
 
 	for _, vid := range validVideos {
 		// Check device+inode in DB
@@ -89,59 +89,63 @@ func (a *App) Search(vm vm.ViewModel) error {
 			continue
 		}
 
-		// Check size+xxhash in DB
-		sizeHashKey := [2]string{strconv.FormatInt(vid.Size, 10), vid.XXHash}
-		if existingDBVid, ok := sizeHashToDBVideo[sizeHashKey]; ok {
-			vid.FKVideoVideohash = existingDBVid.FKVideoVideohash
-			videosReuseHash = append(videosReuseHash, vid)
-			continue
-		}
-
-		vNotRelatedToDB = append(vNotRelatedToDB, vid)
+		videosNewHash = append(videosNewHash, vid)
 	}
 
 	// For new videos that don't match anything in DB by dev/inode
-	// or size/xxhash, if their dev & inode or size & xxhash are =
+	// as calculated above. Loop through them and if their dev & inode are =
 	// then group them together so later we can generate one phash
-	// for the group then propogate it to the rest
-	// Assumption: dev & inode = exact dupe, size & xxhash = exact dupe
+	// for this group (>=2)
+	// Assumption: matching dev & inode = exact dupe
 	var videosToCreate [][]*models.Video
 	deviceInodeToIndex := make(map[[2]uint64]int)
-	sizeHashToIndex := make(map[[2]string]int)
 
-	for _, vid := range vNotRelatedToDB {
+	for _, vid := range videosNewHash {
 		devInoKey := [2]uint64{vid.Device, vid.Inode}
 		if i, ok := deviceInodeToIndex[devInoKey]; ok {
 			videosToCreate[i] = append(videosToCreate[i], vid)
 			continue
 		}
-
-		sizeHashKey := [2]string{strconv.FormatInt(vid.Size, 10), vid.XXHash}
-		if i, ok := sizeHashToIndex[sizeHashKey]; ok {
-			videosToCreate[i] = append(videosToCreate[i], vid)
-			continue
-		}
-
+		// **Because we checked earlier for fs videos that are = to db
+		// videos and set the FKVideoVideohash to a non-zero value. We use this
+		// fact later on to check if we should create a hash for the video.
+		// scuffed because the zero value for int64 is 0. I don't see how this
+		// is needed or why I did this. FIX/ensure it's not needed.**
 		vid.FKVideoVideohash = 0
+
 		index := len(videosToCreate)
 		deviceInodeToIndex[devInoKey] = index
-		sizeHashToIndex[sizeHashKey] = index
 		videosToCreate = append(videosToCreate, []*models.Video{vid})
 	}
 
 	// Also append those that matched an existing DB videohash
 	// Since their FKVideoVideohash != 0 they will be skipped
-	// **should be fixed retarded as is**
 	for _, v := range videosReuseHash {
 		videosToCreate = append(videosToCreate, []*models.Video{v})
 	}
 
+	return videosToCreate
+}
+
+// **error......**
+// cfg -> cfg.Sampler
+// app.GenerateHashes
+//
+//	goroutine:
+//	- get sc's
+//	- gen hash(s)
+func (a *App) GeneratePHashes(v [][]*models.Video, vm vm.ViewModel) error {
 	slog.Info("Starting to generate pHashes!")
-	generatePHashesParallel(videosToCreate, a, func(progress float64) {
+	generatePHashesParallel(v, a, func(progress float64) {
 		vm.UpdateGenPHashesProgress(progress)
 	})
 	slog.Info("Done generating pHashes!")
+	return nil
+}
 
+// **revise entangled god function**
+func (a *App) Search(vm vm.ViewModel) error {
+	// 1. Get Video/Videohash
 	fVideos, err := a.VideoStore.GetAllVideos(context.Background())
 	if err != nil {
 		slog.Error("Error retrieving all videos", slog.Any("error", err))
@@ -228,7 +232,6 @@ func reconcileVideosWithDB(videosFromFS []*models.Video, dbVideos []*models.Vide
 }
 
 func generatePHashesParallel(videosToCreate [][]*models.Video, a *App, UpdatePhashProgress func(progress float64)) {
-	detectionMethod := a.Config.DetectionMethod
 	const workerCount = 5
 	const maxBatchSize = 10
 	const maxRetries = 5

@@ -7,7 +7,6 @@ import (
 
 type Video struct {
 	ID             int64     `db:"id" json:"id"`
-	XXHash         string    `db:"xxhash" json:"xxhash"`
 	Path           string    `db:"path" json:"path"`
 	FileName       string    `db:"fileName" json:"fileName"`
 	CreatedAt      time.Time `db:"createdAt" json:"createdAt"`
@@ -34,11 +33,11 @@ type Video struct {
 
 func (v Video) String() string {
 	return fmt.Sprintf(
-		`ID: %d, XXHash: %s, Path: %s, FileName: %s, CreatedAt: %s, ModifiedAt: %s, 
+		`ID: %d, Path: %s, FileName: %s, CreatedAt: %s, ModifiedAt: %s, 
 AvgFrameRate: %.2f, VideoCodec: %s, AudioCodec: %s, Width: %d, Height: %d, Duration: %.2f, 
 Size: %d, BitRate: %d, NumHardLinks: %d, SymbolicLink: %s, IsSymbolicLink: %t, 
 IsHardLink: %t, Inode: %d, Device: %d, Corrupted: %t, FKVideoVideohash: %d`,
-		v.ID, v.XXHash, v.Path, v.FileName,
+		v.ID, v.Path, v.FileName,
 		v.CreatedAt.Format(time.RFC3339), v.ModifiedAt.Format(time.RFC3339),
 		v.AvgFrameRate, v.VideoCodec, v.AudioCodec, v.Width, v.Height, v.Duration,
 		v.Size, v.BitRate, v.NumHardLinks, v.SymbolicLink, v.IsSymbolicLink,

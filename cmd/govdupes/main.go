@@ -26,7 +26,7 @@ func main() {
 	slog.SetDefault(logger)
 
 	db := sqlite.InitDB(cfg.DatabasePath)
-	vp := videoprocessor.NewFFmpegInstance(&cfg)
+	vp := videoprocessor.NewFFmpegInstance()
 	vs := dbstore.NewVideoStore(db)
 
 	a := application.NewApplication(&cfg, vs, vp)

@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"govdupes/internal/config"
 	"govdupes/internal/models"
 
 	ffmpeg "github.com/u2takey/ffmpeg-go"
@@ -38,8 +37,9 @@ type FFmpegWrapper struct {
 	silent bool
 }
 
-func NewFFmpegInstance(cfg *config.Config) *FFmpegWrapper {
-	return &FFmpegWrapper{silent: cfg.SilentFFmpeg}
+// ****
+func NewFFmpegInstance() *FFmpegWrapper {
+	return &FFmpegWrapper{silent: true}
 }
 
 func (f *FFmpegWrapper) ScreenshotAtTime(filePath string, scWriter io.Writer, timeStamp string) error {
