@@ -2,7 +2,9 @@ package compare
 
 import "govdupes/internal/sampler"
 
-type PairComparer struct{}
+type PairComparer struct {
+	HammingDistance int
+}
 
 func (pc *PairComparer) Compare(hashes1, hashes2 []string) bool {
 	return true

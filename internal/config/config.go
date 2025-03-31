@@ -131,7 +131,6 @@ func (c *Config) SetDefaults() {
 	c.LCS = compare.LCSComparer{}
 }
 
-// validateStartingDirs ensures starting directories exist and are actually dirs
 func ValidateStartingDirs(c *Config) error {
 	for i, dir := range c.StartingDirs {
 		f, err := os.Open(dir)
@@ -197,23 +196,6 @@ func SetupLogger(logFilePath string) *slog.Logger {
 }
 
 /*
-func (c *Config) ParseArgs() {
-	c.StartingDirs = []string{"."}
-	c.DatabasePath = "./videos.db"
-	c.LogFilePath = "app.log"
-	c.IgnoreStr = []string{}
-	c.IncludeStr = []string{}
-	c.IgnoreExt = []string{}
-	c.IncludeExt = []string{"mp4", "m4a", "webm"}
-	c.SaveSC = true
-	c.AbsPath = true
-	c.FollowSymbolicLinks = true
-	c.SkipSymbolicLinks = true
-	c.SilentFFmpeg = true
-	c.FilesizeCutoff = 0
-	ValidateStartingDirs(c)
-}
-
 func (c *Config) ParseArgs() {
 	c.DatabasePath = StringSlice{Values: []string{"./videos.db"}, wipeDefault: true}
 	c.StartingDirs = StringSlice{Values: []string{"."}, wipeDefault: true}

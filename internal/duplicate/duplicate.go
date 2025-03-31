@@ -10,7 +10,7 @@ import (
 
 type DuplicateOptions struct {
 	MaxDurationDiff int
-	MaxHashDistance int
+	MaxHashDistance int //****
 }
 
 func FindVideoDuplicates(hashes []*models.Videohash) error {

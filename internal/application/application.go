@@ -301,6 +301,7 @@ func generatePHashesParallel(videosToCreate [][]*models.Video, a *App, UpdatePha
 					continue
 				}
 
+				detectionMethod := "****"
 				pHash, screenshots, err := hash.Create(a.VideoProcessor, group[0], detectionMethod)
 				if err != nil {
 					slog.Warn("Skipping pHash generation", slog.String("path", group[0].Path), slog.Any("error", err))
