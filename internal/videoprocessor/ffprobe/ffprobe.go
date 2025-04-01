@@ -20,7 +20,7 @@ type FFProbeOutput struct {
 		Width         int             `json:"width"`
 		Height        int             `json:"height"`
 		SampleRateAvg int             `json:"sample_rate_avg"`
-		AvgFrameRate  FractionFloat32 `json:"avg_frame_rate"`
+		AvgFrameRate  FractionFloat64 `json:"avg_frame_rate"`
 	} `json:"streams"`
 	Format struct {
 		Duration string `json:"duration"`
@@ -29,9 +29,9 @@ type FFProbeOutput struct {
 	} `json:"format"`
 }
 
-type FractionFloat32 float32
+type FractionFloat64 float64
 
-func (f *FractionFloat32) UnmarshalJSON(data []byte) error {
+func (f *FractionFloat64) UnmarshalJSON(data []byte) error {
 	raw := strings.Trim(string(data), `"`)
 	parts := strings.Split(raw, "/")
 	if len(parts) != 2 {
@@ -52,7 +52,7 @@ func (f *FractionFloat32) UnmarshalJSON(data []byte) error {
 	if denominator == 0 {
 		return errors.New("division by zero")
 	}
-	*f = FractionFloat32(numerator / denominator)
+	*f = FractionFloat64(numerator / denominator)
 	return nil
 }
 
@@ -97,7 +97,7 @@ func setVideo(f *FFProbeOutput, v *models.Video) error {
 			v.VideoCodec = stream.CodecName
 			v.Width = stream.Width
 			v.Height = stream.Height
-			v.AvgFrameRate = float32(stream.AvgFrameRate)
+			v.AvgFrameRate = float64(stream.AvgFrameRate)
 		case "audio":
 			v.AudioCodec = stream.CodecName
 			v.SampleRateAvg = stream.SampleRateAvg
@@ -127,10 +127,11 @@ func setVideo(f *FFProbeOutput, v *models.Video) error {
 	if dur <= 0 {
 		return fmt.Errorf("invalid duration from ffprobe, filename: %q, duration: %v", v.FileName, dur)
 	}
-	v.Duration = float32(dur)
+	v.Duration = float64(dur)
 	return nil
 }
 
+/*
 func (f *FFProbeOutput) print() {
 	slog.Info("ffprobe output",
 		slog.String("Duration", f.Format.Duration),
@@ -153,3 +154,4 @@ func (f *FFProbeOutput) print() {
 		}
 	}
 }
+*/

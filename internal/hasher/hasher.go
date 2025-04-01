@@ -1,7 +1,11 @@
 package hasher
 
-import "govdupes/internal/models"
+import (
+	"image"
+
+	"govdupes/internal/models"
+)
 
 type Hasher interface {
-	CreateHash([]byte) models.Videohash
+	CreateHash([]image.Image, *models.Video) (*models.Videohash, error)
 }

@@ -15,7 +15,7 @@ type Video struct {
 	AudioCodec     string    `db:"audioCodec" json:"audioCodec"`
 	Width          int       `db:"width" json:"width"`
 	Height         int       `db:"height" json:"height"`
-	Duration       float32   `db:"duration" json:"duration"`
+	Duration       float64   `db:"duration" json:"duration"`
 	Size           int64     `db:"size" json:"size"`
 	BitRate        int       `db:"bitRate" json:"bitRate"`
 	NumHardLinks   uint64    `db:"numHardLinks" json:"numHardLinks"`
@@ -24,7 +24,7 @@ type Video struct {
 	IsHardLink     bool      `db:"isHardLink" json:"isHardLink"`
 	Inode          uint64    `db:"inode" json:"inode"`
 	Device         uint64    `db:"device" json:"device"`
-	AvgFrameRate   float32   `db:"avgFrameRate" json:"avgFrameRate"`
+	AvgFrameRate   float64   `db:"avgFrameRate" json:"avgFrameRate"`
 	SampleRateAvg  int       `db:"sampleRateAvg" json:"sampleRateAvg"`
 	Corrupted      bool
 

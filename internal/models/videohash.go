@@ -10,14 +10,15 @@ import (
 type HashType string
 
 const (
-	HashTypePHash HashType = "phash"
+	SlowHash HashType = "SlowHash"
+	FastHash HashType = "FastHash"
 )
 
 type Videohash struct {
 	ID         int64    `db:"id"`
 	HashType   HashType `db:"hashType"`
 	HashValue  string   `db:"hashValue"`
-	Duration   float32  `db:"duration"`
+	Duration   float64  `db:"duration"`
 	Neighbours IntSlice `db:"neighbours"`
 	Bucket     int      `db:"bucket"`
 }

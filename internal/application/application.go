@@ -9,12 +9,14 @@ import (
 	"sync"
 	"time"
 
+	"govdupes/internal/comparer"
 	"govdupes/internal/config"
 	store "govdupes/internal/db"
 	"govdupes/internal/duplicate"
 	"govdupes/internal/filesystem"
-	"govdupes/internal/hasher/hash"
+	"govdupes/internal/hasher"
 	"govdupes/internal/models"
+	"govdupes/internal/sampler"
 	"govdupes/internal/videoprocessor"
 	"govdupes/internal/videoprocessor/ffprobe"
 	"govdupes/internal/vm"
@@ -24,10 +26,33 @@ type App struct {
 	Config         *config.Config
 	VideoStore     store.VideoStore
 	VideoProcessor *videoprocessor.FFmpegWrapper
+	Hasher         hasher.Hasher
+	Sampler        sampler.Sampler
+	Comparer       comparer.Comparer
 }
 
 func NewApplication(c *config.Config, vs store.VideoStore, vp *videoprocessor.FFmpegWrapper) *App {
 	return &App{Config: c, VideoStore: vs, VideoProcessor: vp}
+}
+
+func (a *App) Search(vm vm.ViewModel) error {
+	a.Hasher = config.GetChosenHasher(*a.Config)
+	a.Sampler = config.GetChosenSampler(*a.Config)
+	a.Comparer = config.GetChosenComparer(*a.Config)
+
+	var err error
+
+	videos := a.SearchFS(vm)
+
+	err = a.GeneratePHashes(videos, vm)
+	if err != nil {
+	}
+
+	err = a.FindDuplicates(vm)
+	if err != nil {
+	}
+
+	return nil
 }
 
 // SearchFS / Reconcile FS videos with DB videos / Create Videos in DB
@@ -127,123 +152,21 @@ func (a *App) SearchFS(vm vm.ViewModel) [][]*models.Video {
 	return videosToCreate
 }
 
-// **error......**
-// cfg -> cfg.Sampler
-// app.GenerateHashes
-//
-//	goroutine:
-//	- get sc's
-//	- gen hash(s)
 func (a *App) GeneratePHashes(v [][]*models.Video, vm vm.ViewModel) error {
 	slog.Info("Starting to generate pHashes!")
-	generatePHashesParallel(v, a, func(progress float64) {
-		vm.UpdateGenPHashesProgress(progress)
-	})
-	slog.Info("Done generating pHashes!")
-	return nil
-}
 
-// **revise entangled god function**
-func (a *App) Search(vm vm.ViewModel) error {
-	// 1. Get Video/Videohash
-	fVideos, err := a.VideoStore.GetAllVideos(context.Background())
-	if err != nil {
-		slog.Error("Error retrieving all videos", slog.Any("error", err))
-		return err
-	}
-	for _, vid := range fVideos {
-		slog.Info("Video details", "Path", vid.Path)
-	}
-
-	fHashes, err := a.VideoStore.GetAllVideoHashes(context.Background())
-	if err != nil {
-		slog.Error("Error retrieving all video hashes", slog.Any("error", err))
-		return err
-	}
-	for _, vhash := range fHashes {
-		slog.Info("Videohash", "vhash.ID", vhash.ID, "vhash.bucket", vhash.Bucket)
-	}
-
-	if len(fVideos) != len(fHashes) {
-		slog.Warn("Mismatch in number of videos and video hashes",
-			slog.Int("videosCount", len(fVideos)),
-			slog.Int("hashesCount", len(fHashes)))
-	}
-
-	slog.Info("Starting to match hashes")
-	err = duplicate.FindVideoDuplicates(fHashes)
-	for _, vhash := range fHashes {
-		slog.Info("Videohash", "vhash.ID", vhash.ID, "vhash.bucket", vhash.Bucket)
-	}
-	if err != nil {
-		slog.Error("Error determining duplicates", slog.Any("error", err))
-		os.Exit(1)
-	}
-
-	if err := a.VideoStore.BulkUpdateVideohashes(context.Background(), fHashes); err != nil {
-		slog.Error("Error in BulkUpdateVideohashes", slog.Any("error", err))
-		return err
-	}
-
-	duplicateVideoData, err := a.VideoStore.GetDuplicateVideoData(context.Background())
-	if err != nil {
-		slog.Error("Error getting duplicate video data", slog.Any("error", err))
-		return err
-	}
-
-	slog.Info("Number of duplicate video groups", slog.Int("count", len(duplicateVideoData)))
-
-	if duplicateVideoData == nil {
-		// err no data, etc...
-		return nil
-	}
-
-	// Convert to a []interface{} to give to the UntypedList
-	items := make([]any, len(duplicateVideoData))
-	for i, grp := range duplicateVideoData {
-		items[i] = grp // []*models.VideoData
-	}
-	vm.SetDuplicateGroups(items)
-	return nil
-}
-
-// reconcileVideosWithDB returns a subset of 'videosFromFS' that are not already
-// in DB (based on path + device/inode/size checks).
-func reconcileVideosWithDB(videosFromFS []*models.Video, dbVideos []*models.Video) []*models.Video {
-	dbPathToVideo := make(map[string]models.Video, len(dbVideos))
-	for _, dbv := range dbVideos {
-		dbPathToVideo[dbv.Path] = *dbv
-	}
-
-	var results []*models.Video
-	for _, fsVid := range videosFromFS {
-		if match, exists := dbPathToVideo[fsVid.Path]; exists {
-			sameInodeDevice := (fsVid.Inode == match.Inode) && (fsVid.Device == match.Device)
-			sameSize := (fsVid.Size == match.Size)
-			if sameInodeDevice && sameSize {
-				slog.Info("Skipping filesystem video already in DB",
-					slog.String("path", fsVid.Path))
-				continue
-			}
-		}
-		results = append(results, fsVid)
-	}
-	return results
-}
-
-func generatePHashesParallel(videosToCreate [][]*models.Video, a *App, UpdatePhashProgress func(progress float64)) {
 	const workerCount = 5
 	const maxBatchSize = 10
 	const maxRetries = 5
 	const retryBaseDelay = 50 * time.Millisecond
 
-	videoChan := make(chan []*models.Video, len(videosToCreate))
-	progressChan := make(chan float64, len(videosToCreate))
+	videoChan := make(chan []*models.Video, len(v))
+	progressChan := make(chan float64, len(v))
 	writeChan := make(chan *models.VideoData, maxBatchSize*workerCount)
 	var wg sync.WaitGroup
 	var writeWg sync.WaitGroup
 
-	// Writer goroutine
+	// -- Writer --
 	writeWg.Add(1)
 	go func() {
 		defer writeWg.Done()
@@ -297,22 +220,34 @@ func generatePHashesParallel(videosToCreate [][]*models.Video, a *App, UpdatePha
 			defer wg.Done()
 			for group := range videoChan {
 				if group[0].FKVideoVideohash != 0 {
-					progressChan <- 1.0 / float64(len(videosToCreate))
+					progressChan <- 1.0 / float64(len(v))
 					continue
 				}
 
-				detectionMethod := "****"
-				pHash, screenshots, err := hash.Create(a.VideoProcessor, group[0], detectionMethod)
+				screenshots, images, err := a.Sampler.Sample(a.VideoProcessor, group[0])
 				if err != nil {
-					slog.Warn("Skipping pHash generation", slog.String("path", group[0].Path), slog.Any("error", err))
-					progressChan <- 1.0 / float64(len(videosToCreate))
+					slog.Warn("Skipping pHash generation, Sample failed",
+						slog.String("path", group[0].Path),
+						slog.Any("error", err),
+					)
+					progressChan <- 1.0 / float64(len(v))
+					continue
+				}
+
+				videoHash, err := a.Hasher.CreateHash(images, group[0])
+				if err != nil {
+					slog.Warn("Skipping pHash generation, CreateHash failed",
+						slog.String("path", group[0].Path),
+						slog.Any("error", err),
+					)
+					progressChan <- 1.0 / float64(len(v))
 					continue
 				}
 
 				// skip video if pHashes are all solid colours
 				solidColor := true
-				for i := 16; i < len(pHash.HashValue); i += 16 {
-					if !strings.EqualFold(pHash.HashValue[i-16:i], "8000000000000000") && !strings.EqualFold(pHash.HashValue[i-16:i], "0000000000000000") {
+				for i := 16; i < len(videoHash.HashValue); i += 16 {
+					if !strings.EqualFold(videoHash.HashValue[i-16:i], "8000000000000000") && !strings.EqualFold(videoHash.HashValue[i-16:i], "0000000000000000") {
 						solidColor = false
 						break
 					}
@@ -321,25 +256,25 @@ func generatePHashesParallel(videosToCreate [][]*models.Video, a *App, UpdatePha
 				if solidColor {
 					slog.Warn("Skipping video with solid color pHash",
 						slog.String("path", group[0].Path),
-						slog.String("pHash", pHash.HashValue))
-					progressChan <- 1.0 / float64(len(videosToCreate))
+						slog.String("pHash", videoHash.HashValue))
+					progressChan <- 1.0 / float64(len(v))
 					continue
 				}
 
 				for _, video := range group {
 					writeChan <- &models.VideoData{
 						Video:      *video,
-						Videohash:  *pHash,
+						Videohash:  *videoHash,
 						Screenshot: *screenshots,
 					}
 				}
-				progressChan <- 1.0 / float64(len(videosToCreate))
+				progressChan <- 1.0 / float64(len(v))
 			}
 		}()
 	}
 
 	// Distribute work
-	for _, group := range videosToCreate {
+	for _, group := range v {
 		videoChan <- group
 	}
 	close(videoChan)
@@ -349,7 +284,7 @@ func generatePHashesParallel(videosToCreate [][]*models.Video, a *App, UpdatePha
 		totalProgress := 0.0
 		for progress := range progressChan {
 			totalProgress += progress
-			UpdatePhashProgress(totalProgress)
+			vm.UpdateGenPHashesProgress(1.0)
 		}
 	}()
 
@@ -357,8 +292,103 @@ func generatePHashesParallel(videosToCreate [][]*models.Video, a *App, UpdatePha
 	close(writeChan)
 	writeWg.Wait()
 	close(progressChan)
-	UpdatePhashProgress(1.0)
+
+	vm.UpdateGenPHashesProgress(1.0)
 	slog.Info("All pHash generation workers completed.")
+	slog.Info("Done generating pHashes!")
+
+	return nil
+}
+
+func (a *App) FindDuplicates(vm vm.ViewModel) error {
+	// -- get videos & videohash from db --
+	fVideos, err := a.VideoStore.GetAllVideos(context.Background())
+	if err != nil {
+		slog.Error("Error retrieving all videos", slog.Any("error", err))
+		return err
+	}
+	for _, vid := range fVideos {
+		slog.Info("Video details", "Path", vid.Path)
+	}
+
+	fHashes, err := a.VideoStore.GetAllVideoHashes(context.Background())
+	if err != nil {
+		slog.Error("Error retrieving all video hashes", slog.Any("error", err))
+		return err
+	}
+	for _, vhash := range fHashes {
+		slog.Info("Videohash", "vhash.ID", vhash.ID, "vhash.bucket", vhash.Bucket)
+	}
+
+	if len(fVideos) != len(fHashes) {
+		slog.Warn("Mismatch in number of videos and video hashes",
+			slog.Int("videosCount", len(fVideos)),
+			slog.Int("hashesCount", len(fHashes)))
+	}
+
+	// -- --
+	slog.Info("Starting to match hashes")
+	err = duplicate.FindVideoDuplicates(fHashes)
+	for _, vhash := range fHashes {
+		slog.Info("Videohash", "vhash.ID", vhash.ID, "vhash.bucket", vhash.Bucket)
+	}
+	if err != nil {
+		slog.Error("Error determining duplicates", slog.Any("error", err))
+		os.Exit(1)
+	}
+
+	// -- add dupe info to videohashes in db --
+	if err := a.VideoStore.BulkUpdateVideohashes(context.Background(), fHashes); err != nil {
+		slog.Error("Error in BulkUpdateVideohashes", slog.Any("error", err))
+		return err
+	}
+
+	// -- check db for new/old duplicates --
+	duplicateVideoData, err := a.VideoStore.GetDuplicateVideoData(context.Background())
+	if err != nil {
+		slog.Error("Error getting duplicate video data", slog.Any("error", err))
+		return err
+	}
+
+	slog.Info("Number of duplicate video groups", slog.Int("count", len(duplicateVideoData)))
+
+	if duplicateVideoData == nil {
+		slog.Info("Could not find any duplicate video data in DB")
+		return nil
+	}
+
+	// convert to []any{} to give to the fyne type 'UntypedList' in UI
+	items := make([]any, len(duplicateVideoData))
+	for i, grp := range duplicateVideoData {
+		items[i] = grp
+	}
+	vm.SetDuplicateGroups(items)
+
+	return nil
+}
+
+// reconcileVideosWithDB returns a subset of 'videosFromFS' that are not already
+// in DB (based on path + device/inode/size checks).
+func reconcileVideosWithDB(videosFromFS []*models.Video, dbVideos []*models.Video) []*models.Video {
+	dbPathToVideo := make(map[string]models.Video, len(dbVideos))
+	for _, dbv := range dbVideos {
+		dbPathToVideo[dbv.Path] = *dbv
+	}
+
+	var results []*models.Video
+	for _, fsVid := range videosFromFS {
+		if match, exists := dbPathToVideo[fsVid.Path]; exists {
+			sameInodeDevice := (fsVid.Inode == match.Inode) && (fsVid.Device == match.Device)
+			sameSize := (fsVid.Size == match.Size)
+			if sameInodeDevice && sameSize {
+				slog.Info("Skipping filesystem video already in DB",
+					slog.String("path", fsVid.Path))
+				continue
+			}
+		}
+		results = append(results, fsVid)
+	}
+	return results
 }
 
 func isSQLiteBusyError(err error) bool {
@@ -634,5 +664,133 @@ func CalculateXXHash(h *xxhash.Digest, v *models.Video) error {
 	return nil
 }
 
+func generatePHashesParallel(videosToCreate [][]*models.Video, a *App, UpdatePhashProgress func(progress float64)) {
+	const workerCount = 5
+	const maxBatchSize = 10
+	const maxRetries = 5
+	const retryBaseDelay = 50 * time.Millisecond
 
+	videoChan := make(chan []*models.Video, len(videosToCreate))
+	progressChan := make(chan float64, len(videosToCreate))
+	writeChan := make(chan *models.VideoData, maxBatchSize*workerCount)
+	var wg sync.WaitGroup
+	var writeWg sync.WaitGroup
+
+	// Writer goroutine
+	writeWg.Add(1)
+	go func() {
+		defer writeWg.Done()
+		var batch []*models.VideoData
+		timer := time.NewTimer(1 * time.Second)
+		defer timer.Stop()
+
+		flushBatch := func() {
+			if len(batch) == 0 {
+				return
+			}
+
+			for retries := range maxRetries {
+				if err := a.VideoStore.BatchCreateVideos(context.Background(), batch); err != nil {
+					if isSQLiteBusyError(err) {
+						time.Sleep(retryBaseDelay * time.Duration(1<<retries))
+						continue
+					}
+					slog.Error("Failed to write batch to DB", slog.Any("error", err))
+					return
+				}
+				break
+			}
+
+			batch = batch[:0]
+		}
+
+		for {
+			select {
+			case task, ok := <-writeChan:
+				if !ok {
+					flushBatch()
+					return
+				}
+
+				batch = append(batch, task)
+				if len(batch) >= maxBatchSize {
+					flushBatch()
+				}
+			case <-timer.C:
+				flushBatch()
+				timer.Reset(1 * time.Second)
+			}
+		}
+	}()
+
+	// -- Workers --
+	for range workerCount {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for group := range videoChan {
+				if group[0].FKVideoVideohash != 0 {
+					progressChan <- 1.0 / float64(len(videosToCreate))
+					continue
+				}
+
+				detectionMethod := "****"
+				pHash, screenshots, err := hash.Create(a.VideoProcessor, group[0], detectionMethod)
+				if err != nil {
+					slog.Warn("Skipping pHash generation", slog.String("path", group[0].Path), slog.Any("error", err))
+					progressChan <- 1.0 / float64(len(videosToCreate))
+					continue
+				}
+
+				// skip video if pHashes are all solid colours
+				solidColor := true
+				for i := 16; i < len(pHash.HashValue); i += 16 {
+					if !strings.EqualFold(pHash.HashValue[i-16:i], "8000000000000000") && !strings.EqualFold(pHash.HashValue[i-16:i], "0000000000000000") {
+						solidColor = false
+						break
+					}
+				}
+
+				if solidColor {
+					slog.Warn("Skipping video with solid color pHash",
+						slog.String("path", group[0].Path),
+						slog.String("pHash", pHash.HashValue))
+					progressChan <- 1.0 / float64(len(videosToCreate))
+					continue
+				}
+
+				for _, video := range group {
+					writeChan <- &models.VideoData{
+						Video:      *video,
+						Videohash:  *pHash,
+						Screenshot: *screenshots,
+					}
+				}
+				progressChan <- 1.0 / float64(len(videosToCreate))
+			}
+		}()
+	}
+
+	// Distribute work
+	for _, group := range videosToCreate {
+		videoChan <- group
+	}
+	close(videoChan)
+
+	// Progress updater goroutine
+	go func() {
+		totalProgress := 0.0
+		for progress := range progressChan {
+			totalProgress += progress
+			UpdatePhashProgress(totalProgress)
+		}
+	}()
+
+	wg.Wait()
+	close(writeChan)
+	writeWg.Wait()
+	close(progressChan)
+	UpdatePhashProgress(1.0)
+	slog.Info("All pHash generation workers completed.")
+}
 */

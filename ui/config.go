@@ -40,9 +40,13 @@ type formStruct struct {
 
 type samplerComparerForm struct {
 	SamplerType binding.String
-
+	// sampler fields
 	SlowSkipPercent binding.Float
 	SlowFPS         binding.Float
+
+	HasherType binding.String
+
+	ComparerType binding.String
 
 	PairHammingDistance binding.Int
 
@@ -63,12 +67,12 @@ func newSamplerComparerForm(cfg *config.Config) *samplerComparerForm {
 
 	_ = f.SamplerType.Set("slow")
 
-	_ = f.SlowSkipPercent.Set(cfg.Slow.SkipPercent)
-	_ = f.SlowFPS.Set(cfg.Slow.FPS)
+	_ = f.SlowSkipPercent.Set(cfg.SlowSampler.SkipPercent)
+	_ = f.SlowFPS.Set(cfg.SlowSampler.FPS)
 
 	_ = f.PairHammingDistance.Set(cfg.Pair.HammingDistance)
 
-	_ = f.FastSkipPercent.Set(cfg.Fast.SkipPercent)
+	_ = f.FastSkipPercent.Set(cfg.FastSampler.SkipPercent)
 
 	_ = f.LCSHammingDistance.Set(cfg.LCS.HammingDistance)
 

@@ -1,26 +1,11 @@
 package hash
 
-import (
-	"bytes"
-	"encoding/base64"
-	"fmt"
-	"image"
-	"image/draw"
-	"log/slog"
-	"math"
-	"strings"
-
-	"govdupes/internal/models"
-	"govdupes/internal/videoprocessor"
-
-	"github.com/corona10/goimagehash"
-	"golang.org/x/image/bmp"
-)
+/*
 
 type Phasher struct{}
 
-func (p *Phasher) CreateHash([]byte) models.Videohash {
-	return models.Videohash{}
+func (p *Phasher) CreateHash([]image.Image) *models.Videohash {
+	return &models.Videohash{}
 }
 
 func GenerateHashes(videoPaths string) (string, error) {
@@ -104,7 +89,6 @@ func createSlowPhash(vp *videoprocessor.FFmpegWrapper, v *models.Video) (*models
 						if err := bmp.Encode(file, img); err != nil {
 							return nil, nil, fmt.Errorf("error writing BMP for image %d: %w", i, err)
 						}
-		*/
 
 		hash, hashErr := goimagehash.PerceptionHash(img)
 		if hashErr != nil {
@@ -248,7 +232,6 @@ func ConvertImagesToBase64(images []image.Image) ([]string, error) {
 	return encodedStrings, nil
 }
 
-/*
 func createSlowPhash(vp *videoprocessor.FFmpegWrapper, v *models.Video) (*models.Videohash, *models.Screenshots, error) {
 	numFrames := int(math.Floor(float64(v.Duration)))
 

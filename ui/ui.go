@@ -124,7 +124,7 @@ func buildSearchTab(appInstance *application.App, parent fyne.Window, vm vm.View
 
 			err := appInstance.Search(vm)
 			if err != nil {
-				slog.Error("Error calling search", "error", err)
+				slog.Error("Error calling SearchFS", "error", err)
 			}
 
 			close(stopChan)
@@ -148,7 +148,7 @@ func (c *clock) set() {
 
 func (c *clock) update(clockWidget *widget.Label) {
 	tElapsed := time.Since(c.t)
-	tStr := formatDuration(float32(tElapsed.Seconds()))
+	tStr := formatDuration(tElapsed.Seconds())
 	clockWidget.SetText(fmt.Sprintf("Time elapsed: %s", tStr))
 }
 
@@ -166,7 +166,7 @@ func runClock(c *clock, clockWidget *widget.Label, stopChan chan struct{}) {
 }
 
 // returns hh:mm:ss from seconds
-func formatDuration(seconds float32) string {
+func formatDuration(seconds float64) string {
 	hours := int(seconds) / 3600
 	mins := (int(seconds) % 3600) / 60
 	secs := int(seconds) % 60

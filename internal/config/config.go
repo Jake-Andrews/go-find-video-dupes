@@ -34,11 +34,12 @@ type Config struct {
 	SilentFFmpeg        bool
 	// ----
 	SamplerType SamplerType
-	Slow        sample.SlowSampler
-	Fast        sample.FastSampler
+	SlowSampler sample.SlowSampler
+	FastSampler sample.FastSampler
 	//
 	HasherType HasherType
-	Phash      hash.Phasher
+	SlowHasher hash.SlowHasher
+	FastHasher hash.FastHasher
 	//
 	CompareType ComparerType
 	Pair        compare.PairComparer
@@ -52,13 +53,15 @@ const (
 	FastSampler
 )
 
-func BuildSamplerFromConfig(cfg Config) sampler.Sampler {
+func GetChosenSampler(cfg Config) sampler.Sampler {
 	switch cfg.SamplerType {
 	case SlowSampler:
-		return &cfg.Slow
+		return &cfg.SlowSampler
 	case FastSampler:
-		return &cfg.Fast
+		return &cfg.FastSampler
 	default:
+		slog.Error("unknown type while building Sampler", "cfg.SamplerType", cfg.SamplerType)
+		os.Exit(1)
 		return nil
 	}
 }
@@ -66,14 +69,19 @@ func BuildSamplerFromConfig(cfg Config) sampler.Sampler {
 type HasherType int
 
 const (
-	Phash HasherType = iota
+	FastHasher HasherType = iota
+	SlowHasher
 )
 
-func BuildHasherFromConfig(cfg Config) hasher.Hasher {
+func GetChosenHasher(cfg Config) hasher.Hasher {
 	switch cfg.HasherType {
-	case Phash:
-		return &cfg.Phash
+	case FastHasher:
+		return &cfg.FastHasher
+	case SlowHasher:
+		return &cfg.SlowHasher
 	default:
+		slog.Error("unknown HasherType while building hasher", "cfg.HasherType", cfg.HasherType)
+		os.Exit(1)
 		return nil
 	}
 }
@@ -85,13 +93,15 @@ const (
 	LCS
 )
 
-func BuildComparerFromConfig(cfg Config) comparer.Comparer {
+func GetChosenComparer(cfg Config) comparer.Comparer {
 	switch cfg.CompareType {
 	case Pair:
 		return &cfg.Pair
 	case LCS:
 		return &cfg.LCS
 	default:
+		slog.Error("unknown type while building Comparer", "cfg.CompareType", cfg.CompareType)
+		os.Exit(1)
 		return nil
 	}
 }
@@ -120,15 +130,16 @@ func (c *Config) SetDefaults() {
 	// -- --
 
 	c.SamplerType = FastSampler
-	c.Slow = sample.SlowSampler{SkipPercent: 0.1, FPS: 1.0}
-	c.Fast = sample.FastSampler{SkipPercent: 0.1, Frames: 4}
+	c.SlowSampler = sample.SlowSampler{SkipPercent: 10, FPS: 1.0}
+	c.FastSampler = sample.FastSampler{SkipPercent: 10, Frames: 4}
 	// -- --
-	c.HasherType = Phash
-	c.Phash = hash.Phasher{}
+	c.HasherType = FastHasher
+	c.SlowHasher = hash.SlowHasher{}
+	c.FastHasher = hash.FastHasher{}
 	// -- --
 	c.CompareType = Pair
-	c.Pair = compare.PairComparer{}
-	c.LCS = compare.LCSComparer{}
+	c.Pair = compare.PairComparer{HammingDistance: 4}
+	c.LCS = compare.LCSComparer{HammingDistance: 4, SlidingWindow: 5}
 }
 
 func ValidateStartingDirs(c *Config) error {
